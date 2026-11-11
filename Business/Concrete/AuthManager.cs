@@ -13,29 +13,30 @@ using System.Threading.Tasks;
 
 namespace Business.Concrete
 {
-    //Ders34(1)
     public class AuthManager : IAuthService
     {
         IUserService _userService;
         ITokenHelper _tokenHelper;
 
+        // Kullanıcı ve token servis bağımlılıklarını alır.
         public AuthManager(IUserService userService, ITokenHelper tokenHelper)
         {
             _userService = userService;
             _tokenHelper = tokenHelper;
         }
 
+        // Kullanıcının rolleriyle birlikte giriş token'ı üretir.
         public IDataResult<AccessToken> CreateAccessToken(User user)
         {
-            //Kullanıcımızın kayıt olduktan sonra bir token verilecek ve bununla işlenm yapabileceğiz.
             var claims = _userService.GetClaims(user);
             var accessToken = _tokenHelper.CreateToken(user, claims);
             return new SuccessDataResult<AccessToken>(accessToken, Messages.AccessTokenCreated);
         }
 
+        // E-posta ve şifreyi doğrular; hesap kapalıysa girişe izin vermez.
         public IDataResult<User> Login(UserForLoginDto userForLoginDto)
         {
-            var userToCheck = _userService.GetByMail(userForLoginDto.Email);  //Böyle bir kullanıcı varmı diye kontrol edelim
+            var userToCheck = _userService.GetByMail(userForLoginDto.Email);
             if (userToCheck == null)
             {
                 return new ErrorDataResult<User>(Messages.UserNotFound);
@@ -44,16 +45,16 @@ namespace Business.Concrete
             {
                 return new ErrorDataResult<User>(Messages.PasswordError);
             }
+            if (!userToCheck.Status)
+            {
+                return new ErrorDataResult<User>("Bu kullanıcı hesabı kapatılmış.");
+            }
             return new SuccessDataResult<User>(userToCheck, Messages.SuccessfulLogin);
-
         }
 
+        // Şifreyi hash'leyip yeni kullanıcı kaydı oluşturur.
         public IDataResult<User> Register(UserForRegisterDto userForRegisterDto, string password)
         {
-            //Sisteme Kayıt olma işlemidir
-            //Bize gönderilen şifrenin  hash ve salt olarak bize dönmesini bekliyoruz
-            //
-
             byte[] passwordHash, passwordSalt;
             HashingHelper.CreatePasswordHash(password, out passwordHash, out passwordSalt);
             var user = new User
@@ -63,17 +64,15 @@ namespace Business.Concrete
                 LastName = userForRegisterDto.LastName,
                 PasswordHash = passwordHash,
                 PasswordSalt = passwordSalt,
-                Status = true //Kayıt olur ama birinin onu onaylaması gereken sistemler olabilir.
-
+                Status = true
             };
             _userService.Add(user);
             return new SuccessDataResult<User>(user, Messages.UserRegistered);
-
         }
 
+        // Verilen e-posta ile kayıtlı kullanıcı varsa hata döner.
         public IResult UserExist(string email)
         {
-            //Sistemde böyle bir kullanıcı varmı?
             if (_userService.GetByMail(email) != null)
             {
                 return new ErrorResult(Messages.UserAlreadyExists);

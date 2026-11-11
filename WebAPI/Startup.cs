@@ -1,3 +1,4 @@
+using Business.Abstract;
 using Business.DependencyResolvers;
 using Core.DependencyResolvers;
 using Core.Extensions;
@@ -11,6 +12,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
+using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using WebAPI.Hubs;
 using WebAPI.Hubs.WebAPI.Hubs;
@@ -21,6 +24,7 @@ namespace WebAPI
 {
     public class Startup
     {
+        // Ayar nesnesini alýr.
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
@@ -28,6 +32,7 @@ namespace WebAPI
 
         public IConfiguration Configuration { get; }
 
+        // Servisleri, SignalR'ý, CORS'u ve JWT doðrulamasýný kaydeder.
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
@@ -65,9 +70,9 @@ namespace WebAPI
                         IssuerSigningKey = SecurityKeyHelper.CreateSecurityKey(tokenOptions.SecurityKey)
                     };
 
-                    // WebSocket üzerinden JWT Token okuma mekanizmasý
                     options.Events = new JwtBearerEvents
                     {
+                        // WebSocket üzerinden JWT Token okuma mekanizmasý
                         OnMessageReceived = context =>
                         {
                             var accessToken = context.Request.Query["access_token"];
@@ -80,6 +85,44 @@ namespace WebAPI
                                 context.Token = accessToken;
                             }
                             return Task.CompletedTask;
+                        },
+
+                        // Token uzun ömürlü olduðu için roller ve hesap durumu her istekte veritabanýndan yenilenir
+                        OnTokenValidated = context =>
+                        {
+                            if (context.Principal?.Identity is not ClaimsIdentity identity)
+                                return Task.CompletedTask;
+
+                            int userId = context.Principal.GetUserId();
+                            if (userId == 0)
+                                return Task.CompletedTask;
+
+                            var userService = context.HttpContext.RequestServices.GetRequiredService<IUserService>();
+                            var access = userService.GetCurrentAccess(userId);
+
+                            // Veritabanýna ulaþýlamadýysa token'daki roller kullanýlýr (operatör kilitlenmesin)
+                            if (access == null)
+                                return Task.CompletedTask;
+
+                            if (!access.Exists || !access.IsActive)
+                            {
+                                context.Fail("Kullanýcý hesabý kapatýlmýþ ya da silinmiþ.");
+                                return Task.CompletedTask;
+                            }
+
+                            // Token'daki eski roller silinip güncel roller eklenir
+                            var oldRoles = identity.FindAll(ClaimTypes.Role)
+                                .Concat(identity.FindAll(identity.RoleClaimType))
+                                .Distinct()
+                                .ToList();
+
+                            foreach (var claim in oldRoles)
+                                identity.RemoveClaim(claim);
+
+                            foreach (var role in access.Roles)
+                                identity.AddClaim(new Claim(ClaimTypes.Role, role));
+
+                            return Task.CompletedTask;
                         }
                     };
                 });
@@ -91,6 +134,7 @@ namespace WebAPI
             });
         }
 
+        // Ýstek hattýný (hata yakalama, CORS, kimlik doðrulama, uç yönlendirme) kurar.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
             if (env.IsDevelopment())

@@ -10,10 +10,13 @@ namespace WebAPI.Controllers
     {
         private IAuthService _authService;
 
+        // Kimlik doğrulama servis bağımlılığını alır.
         public AuthController(IAuthService authService)
         {
             _authService = authService;
         }
+
+        // E-posta ve şifreyle giriş yapar, başarılıysa token döner.
         [HttpPost("login")]
         public ActionResult Login(UserForLoginDto userForLoginDto)
         {
@@ -23,22 +26,6 @@ namespace WebAPI.Controllers
                 return BadRequest(userToLogin.Message);
             }
             var result = _authService.CreateAccessToken(userToLogin.Data);
-            if (result.IsSuccess)
-            {
-                return Ok(result.Data);
-            }
-            return BadRequest(result.Message);
-        }
-        [HttpPost("register")]
-        public ActionResult Register(UserForRegisterDto userForRegisterDto)
-        {
-            var userExist = _authService.UserExist(userForRegisterDto.Email); //Kullanıcı kayıtlımı?
-            if (!userExist.IsSuccess)
-            {
-                return BadRequest(userExist.Message);
-            }
-            var registerResult = _authService.Register(userForRegisterDto, userForRegisterDto.Password);
-            var result = _authService.CreateAccessToken(registerResult.Data);
             if (result.IsSuccess)
             {
                 return Ok(result.Data);
