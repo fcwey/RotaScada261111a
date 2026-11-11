@@ -1,12 +1,12 @@
 ﻿using Business.Abstract;
+using Business.ValidationRules;
 using Core.Utilities.Results;
 using DataAccess.Abstract;
 using DataAccess.Concrete.EntityFramework.Contexts;
 using Entities.Concrete;
+using Entities.Enums;
 using Entities.Structures;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using S7.Net;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,290 +16,322 @@ namespace Business.Concrete
 {
     public class RecipeManager : IRecipeService
     {
-        private readonly NorthwindContext _context;
         private readonly IS7DriverDal _s7DriverDal;
-        private readonly IHttpContextAccessor _httpContextAccessor;
+        private readonly IPlcService _plcService;
 
-        public RecipeManager(NorthwindContext context, IS7DriverDal s7DriverDal, IHttpContextAccessor httpContextAccessor)
+        // DB202'ye aynı anda tek reçete yazılmasını sağlar (yazma ve komut birlikte kilitlenir).
+        private readonly SemaphoreSlim _plcRecipeLock = new SemaphoreSlim(1, 1);
+
+        // Sürücü ve PLC servis bağımlılıklarını alır.
+        public RecipeManager(IS7DriverDal s7DriverDal, IPlcService plcService)
         {
-            _context = context;
             _s7DriverDal = s7DriverDal;
-            _httpContextAccessor = httpContextAccessor;
+            _plcService = plcService;
         }
 
-        // İstemcinin IP adresini istekten okur, istek yoksa 127.0.0.1 döner.
-        private string GetClientIpAddress()
-        {
-            var httpContext = _httpContextAccessor?.HttpContext;
-            if (httpContext == null) return "127.0.0.1";
-
-            string? ip = httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
-            if (string.IsNullOrEmpty(ip))
-            {
-                ip = httpContext.Connection.RemoteIpAddress?.ToString();
-            }
-            return ip ?? "127.0.0.1";
-        }
-
-        // Tarih ve saatten parti kodu üretir (Örn: BATCH-20261028-012845).
-        private string GenerateUniqueBatchCode()
-        {
-            return $"BATCH-{DateTime.Now:yyyyMMdd-HHmmss}";
-        }
-
-        // Tüm reçeteleri adımlarıyla birlikte listeler.
+        // Kullanımdaki reçeteleri adımlarıyla birlikte listeler.
         public async Task<IDataResult<List<Recipe>>> GetAllRecipesAsync()
         {
-            var recipes = await _context.Recipes.Include(r => r.Steps).ToListAsync();
+            await using var context = new NorthwindContext();
+
+            var recipes = await context.Recipes
+                .AsNoTracking()
+                .Include(r => r.Steps)
+                .Where(r => r.IsActive)
+                .OrderBy(r => r.RecipeName)
+                .ToListAsync();
+
+            foreach (var recipe in recipes)
+                recipe.Steps = recipe.Steps.OrderBy(s => s.StepNo).ToList();
+
             return new SuccessDataResult<List<Recipe>>(recipes, "Reçeteler listelendi.");
         }
 
         // Verilen id'ye ait reçeteyi adımlarıyla birlikte getirir.
         public async Task<IDataResult<Recipe>> GetRecipeByIdAsync(int id)
         {
-            var recipe = await _context.Recipes.Include(r => r.Steps).FirstOrDefaultAsync(r => r.Id == id);
-            if (recipe == null) return new ErrorDataResult<Recipe>("Reçete bulunamadı.");
+            var recipe = await LoadRecipeAsync(id);
+            if (recipe == null)
+                return new ErrorDataResult<Recipe>("Reçete bulunamadı.");
+
             return new SuccessDataResult<Recipe>(recipe);
         }
 
-        // Yeni reçeteyi veritabanına ekler.
-        public async Task<IResult> AddRecipeAsync(Recipe recipe)
+        // Reçeteyi doğrulayıp veritabanına ekler; oluşan reçetenin id'sini döner.
+        public async Task<IDataResult<int>> AddRecipeAsync(Recipe recipe)
         {
-            await _context.Recipes.AddAsync(recipe);
-            await _context.SaveChangesAsync(); // NorthwindContext Interceptor otomatik AuditLog oluşturur
-            return new SuccessResult("Reçete veritabanına eklendi.");
+            RecipeRules.Normalize(recipe);
+
+            var error = RecipeRules.Validate(recipe, await ReadLimitsAsync());
+            if (error != null)
+                return new ErrorDataResult<int>(error.Message);
+
+            var entity = new Recipe
+            {
+                CreatedAt = DateTime.Now,
+                IsActive = true,
+                Steps = recipe.Steps.OrderBy(s => s.StepNo).Select(CloneStep).ToList()
+            };
+            CopyHeader(recipe, entity);
+
+            await using var context = new NorthwindContext();
+            await context.Recipes.AddAsync(entity);
+            await context.SaveChangesAsync();
+
+            return new SuccessDataResult<int>(entity.Id, $"'{entity.RecipeName}' reçetesi kaydedildi.");
         }
 
-        // Mevcut reçeteyi günceller.
+        // Mevcut reçeteyi doğrulayıp başlığını ve adımlarını günceller.
         public async Task<IResult> UpdateRecipeAsync(Recipe recipe)
         {
-            _context.Recipes.Update(recipe);
-            await _context.SaveChangesAsync(); // Interceptor otomatik AuditLog oluşturur
-            return new SuccessResult("Reçete güncellendi.");
+            RecipeRules.Normalize(recipe);
+
+            var error = RecipeRules.Validate(recipe, await ReadLimitsAsync());
+            if (error != null)
+                return new ErrorResult(error.Message);
+
+            await using var context = new NorthwindContext();
+
+            var existing = await context.Recipes
+                .Include(r => r.Steps)
+                .FirstOrDefaultAsync(r => r.Id == recipe.Id && r.IsActive);
+
+            if (existing == null)
+                return new ErrorResult("Güncellenecek reçete bulunamadı.");
+
+            CopyHeader(recipe, existing);
+
+            // Eski adımlar silinip yenileri eklenir.
+            context.RecipeSteps.RemoveRange(existing.Steps.ToList());
+            foreach (var step in recipe.Steps.OrderBy(s => s.StepNo))
+            {
+                var newStep = CloneStep(step);
+                newStep.RecipeId = existing.Id;
+                await context.RecipeSteps.AddAsync(newStep);
+            }
+
+            await context.SaveChangesAsync();
+            return new SuccessResult($"'{existing.RecipeName}' reçetesi güncellendi.");
         }
 
-        // Verilen id'ye ait reçeteyi siler.
+        // Reçeteyi siler; şarj kayıtlarında kullanılmışsa silmek yerine kullanımdan kaldırır.
         public async Task<IResult> DeleteRecipeAsync(int id)
         {
-            var recipe = await _context.Recipes.FindAsync(id);
-            if (recipe == null) return new ErrorResult("Silinecek reçete bulunamadı.");
-            _context.Recipes.Remove(recipe);
-            await _context.SaveChangesAsync(); // Interceptor otomatik AuditLog oluşturur
-            return new SuccessResult("Reçete silindi.");
-        }
+            await using var context = new NorthwindContext();
 
-        // Reçeteyi PLC'nin belirtilen DB bloğuna yazar ve audit log kaydı düşer.
-        public async Task<IResult> DownloadRecipeToPlcAsync(int recipeId, int targetDbNumber = 2, int? userId = null, string? userIp = null)
-        {
-            userIp ??= GetClientIpAddress();
-
-            var recipe = await _context.Recipes
-                .Include(r => r.Steps)
-                .FirstOrDefaultAsync(r => r.Id == recipeId);
-
+            var recipe = await context.Recipes.FirstOrDefaultAsync(r => r.Id == id && r.IsActive);
             if (recipe == null)
-                return new ErrorResult("PLC'ye aktarılacak reçete veritabanında bulunamadı.");
+                return new ErrorResult("Silinecek reçete bulunamadı.");
 
-            if (!_s7DriverDal.IsConnected)
-                return new ErrorResult("PLC bağlantısı yok! Reçete yüklenemedi.");
-
-            var sortedSteps = recipe.Steps.OrderBy(s => s.StepNo).ToList();
-
-            var plcRecipe = new PlcRecipeStruct
+            bool usedInBatch = await context.Batches.AnyAsync(b => b.RecipeId == id);
+            if (usedInBatch)
             {
-                RecipeID = (short)recipe.RecipeID,
-                RecipeType = (short)recipe.RecipeType,
-                RecipeName = recipe.RecipeName.Length > 30 ? recipe.RecipeName.Substring(0, 30) : recipe.RecipeName,
-                TotalStepCount = (short)Math.Min(sortedSteps.Count, 20)
-            };
-
-            for (int i = 0; i < 20; i++)
-            {
-                if (i < sortedSteps.Count)
-                {
-                    var step = sortedSteps[i];
-                    plcRecipe.Steps[i] = new PlcStepStruct
-                    {
-                        StepType = (short)step.StepType,
-                        Vac_SetPoint = step.Vac_SetPoint,
-                        Vac_Timeout = (uint)step.Vac_TimeoutMs,
-                        TargetTemp = step.TargetTemp,
-                        StepTime = (uint)step.StepTimeMs,
-                        GSoak = step.GSoak,
-                        N2_Flow = step.N2_Flow,
-                        NH3_Flow = step.NH3_Flow,
-                        dNH3_Flow = step.dNH3_Flow,
-                        Su_Flow = step.Su_Flow,
-                        Oxygen_Set = step.Oxygen_Set
-                    };
-                }
-                else
-                {
-                    plcRecipe.Steps[i] = new PlcStepStruct();
-                }
+                // Geçmiş şarj raporları bozulmasın diye kayıt tutulur, listeden kaldırılır.
+                recipe.IsActive = false;
+                await context.SaveChangesAsync();
+                return new SuccessResult($"'{recipe.RecipeName}' reçetesi kullanımdan kaldırıldı (geçmiş şarjlarda kullanıldığı için silinmedi).");
             }
 
-            await _s7DriverDal.WriteClassAsync(plcRecipe, targetDbNumber, startByte: 0);
-
-            // Fiziki PLC İşlemi İçin Explicit Audit Log Kaydı
-            await _context.AuditLogs.AddAsync(new AuditLog
-            {
-                UserId = userId,
-                UserIpAddress = userIp,
-                ActionType = "PLC_RECIPE_DOWNLOAD",
-                ModuleName = "RecipeManager",
-                Description = $"'{recipe.RecipeName}' (ID: {recipeId}) reçetesi PLC DB{targetDbNumber} alanına yazıldı.",
-                IsSuccess = true,
-                Timestamp = DateTime.Now
-            });
-            await _context.SaveChangesAsync();
-
-            return new SuccessResult($"'{recipe.RecipeName}' reçetesi PLC DB{targetDbNumber} alanına başarıyla indirildi.");
+            context.Recipes.Remove(recipe);
+            await context.SaveChangesAsync();
+            return new SuccessResult($"'{recipe.RecipeName}' reçetesi silindi.");
         }
 
-        // Şarj kaydını açar, reçeteyi PLC'ye indirir ve start darbesi gönderir; hata olursa şarjı ABORTED yapar.
-        public async Task<IResult> DownloadAndStartRecipeAsync(int recipeId, int? userId = null, string? userIp = null)
+        // Reçeteyi DB202'ye yazar ve PLC'nin yalnızca kontrol etmesini ister (Validate komutu).
+        public async Task<IDataResult<ScadaCommandResult>> ValidateOnPlcAsync(int recipeId)
         {
-            userIp ??= GetClientIpAddress();
+            var recipe = await LoadRecipeAsync(recipeId);
+            if (recipe == null)
+                return new ErrorDataResult<ScadaCommandResult>("Reçete bulunamadı.");
 
-            // A) Hızlı kontrol: Fırında aktif çalışan şarj var mı? (Asıl koruma veritabanındaki unique index'tir)
-            var activeBatch = await _context.Batches.AsNoTracking().FirstOrDefaultAsync(b => b.Status == "RUNNING");
-            if (activeBatch != null)
-            {
-                return new ErrorResult($"Fırında zaten çalışan bir şarj mevcut! ({activeBatch.BatchCode}). Yeni şarj başlatmadan önce mevcut şarjı sonlandırın.");
-            }
+            return await SendRecipeAsync(recipe, ScadaCommandCode.Validate);
+        }
 
-            // B) Reçete var mı? (Şarj kaydı açılmadan önce kontrol edilir)
-            bool recipeExists = await _context.Recipes.AnyAsync(r => r.Id == recipeId);
-            if (!recipeExists)
-            {
-                return new ErrorResult("Başlatılacak reçete veritabanında bulunamadı.");
-            }
+        // Reçeteyi DB202'ye yazar, Start komutunu gönderir ve kabul edilirse şarj kaydını açar.
+        public async Task<IDataResult<ScadaCommandResult>> StartRecipeAsync(int recipeId, int userId)
+        {
+            var recipe = await LoadRecipeAsync(recipeId);
+            if (recipe == null)
+                return new ErrorDataResult<ScadaCommandResult>("Başlatılacak reçete bulunamadı.");
 
-            // C) Şarj kaydı PLC'ye dokunulmadan ÖNCE açılır; unique index sayesinde aynı anda yalnızca bir istek bunu başarır
-            var newBatch = new Batch
-            {
-                BatchCode = GenerateUniqueBatchCode(),
-                RecipeId = recipeId,
-                OperatorUserId = userId ?? 1,
-                StartTime = DateTime.Now,
-                Status = "RUNNING",
-                CompletionNote = "Fırın otomasyonu başlatıldı."
-            };
+            var result = await SendRecipeAsync(recipe, ScadaCommandCode.Start);
+            if (!result.IsSuccess)
+                return result;
 
+            // Program PLC'de başladı; şarj kaydı bundan sonra açılır.
+            string? batchCode = await OpenBatchAsync(recipeId, userId);
+
+            string message = batchCode != null
+                ? $"'{recipe.RecipeName}' programı başladı. Şarj kodu: {batchCode}"
+                : $"'{recipe.RecipeName}' programı başladı ama şarj kaydı açılamadı. Veritabanını kontrol edin.";
+
+            return new SuccessDataResult<ScadaCommandResult>(result.Data, message);
+        }
+
+        // PLC'de çalışan reçeteyi DB203'ten okuyup döner.
+        public async Task<IDataResult<Recipe>> GetActiveRecipeAsync()
+        {
             try
             {
-                await _context.Batches.AddAsync(newBatch);
-                await _context.SaveChangesAsync(); // newBatch.Id burada oluşur
-            }
-            catch (DbUpdateException)
-            {
-                // Başarısız kayıt, paylaşılan context'in takibinde kalıp sonraki SaveChanges çağrılarını bozmasın
-                _context.Entry(newBatch).State = EntityState.Detached;
-                return new ErrorResult("Fırında zaten çalışan bir şarj mevcut! Aynı anda başka bir başlatma isteği işlendi.");
-            }
-
-            try
-            {
-                // D) Reçeteyi PLC DB2'ye indir
-                var downloadResult = await DownloadRecipeToPlcAsync(recipeId, targetDbNumber: 2, userId, userIp);
-                if (!downloadResult.IsSuccess)
-                {
-                    await AbortBatchAsync(newBatch, $"Reçete PLC'ye indirilemedi: {downloadResult.Message}", userId, userIp);
-                    return downloadResult;
-                }
-
-                // E) DB3.DBX0.0 adresine 1 saniyelik Start darbesi gönderilir
-                await _s7DriverDal.PulseBitAsync(DataType.DataBlock, db: 3, startByte: 0, bitNumber: 0, durationMs: 1000);
-
-                // F) Audit Log Kaydı
-                await _context.AuditLogs.AddAsync(new AuditLog
-                {
-                    UserId = userId,
-                    UserIpAddress = userIp,
-                    ActionType = "BATCH_START_PULSE",
-                    ModuleName = "RecipeManager",
-                    Description = $"'{newBatch.BatchCode}' (Batch ID: {newBatch.Id}) şarjı başlatıldı ve DB3.DBX0.0 adresine 1000ms Start darbesi gönderildi.",
-                    IsSuccess = true,
-                    Timestamp = DateTime.Now
-                });
-                await _context.SaveChangesAsync();
-
-                return new SuccessDataResult<int>(newBatch.Id, $"Reçete PLC'ye indirildi. '{newBatch.BatchCode}' kodlu Şarj (Batch ID: {newBatch.Id}) başlatıldı.");
+                var buffer = await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbActiveRecipe, 0, RecipeCodec.TotalSize);
+                return new SuccessDataResult<Recipe>(RecipeCodec.Decode(buffer));
             }
             catch (Exception ex)
             {
-                // Şarj kaydı RUNNING bırakılmaz; aksi halde sonraki tüm başlatmalar bloke olur
-                bool aborted = await AbortBatchAsync(newBatch, $"Şarj başlatılırken hata oluştu: {ex.Message}", userId, userIp);
-
-                string abortInfo = aborted
-                    ? "Şarj kaydı ABORTED olarak kapatıldı."
-                    : "Şarj kaydı ABORTED yapılamadı, veritabanını manuel kontrol edin.";
-
-                return new ErrorResult($"Şarj başlatılamadı: {ex.Message} {abortInfo} Fırının durumunu PLC üzerinden kontrol edin.");
+                return new ErrorDataResult<Recipe>($"Çalışan reçete okunamadı: {ex.Message}");
             }
         }
 
-        // Şarjı ABORTED olarak kapatır ve audit log düşer; başarılıysa true döner.
-        private async Task<bool> AbortBatchAsync(Batch batch, string note, int? userId, string userIp)
+        // Çalışan programın değiştirilmiş halini DB202'ye yazar ve ApplyEdit komutunu gönderir.
+        public async Task<IDataResult<ScadaCommandResult>> ApplyEditAsync(Recipe editedRecipe)
+        {
+            return await SendRecipeAsync(editedRecipe, ScadaCommandCode.ApplyEdit);
+        }
+
+        // Reçeteyi doğrular, DB202'ye yazar, geri okuyup karşılaştırır ve verilen komutu gönderir.
+        private async Task<IDataResult<ScadaCommandResult>> SendRecipeAsync(Recipe recipe, ScadaCommandCode command)
+        {
+            await _plcRecipeLock.WaitAsync();
+            try
+            {
+                var layout = await _plcService.VerifyLayoutAsync();
+                if (!layout.IsSuccess)
+                    return new ErrorDataResult<ScadaCommandResult>(layout.Message);
+
+                RecipeRules.Normalize(recipe);
+
+                var error = RecipeRules.Validate(recipe, await ReadLimitsAsync());
+                if (error != null)
+                    return new ErrorDataResult<ScadaCommandResult>(error, error.Message);
+
+                byte[] data = RecipeCodec.Encode(recipe);
+                await _s7DriverDal.WriteBytesAsync(ScadaLayout.DbRecipe, 0, data);
+
+                // Yazılan veri geri okunup karşılaştırılır; uyuşmuyorsa komut gönderilmez.
+                byte[] readBack = await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbRecipe, 0, data.Length);
+                if (!readBack.SequenceEqual(data))
+                    return new ErrorDataResult<ScadaCommandResult>("DB202'ye yazılan reçete geri okunanla uyuşmuyor. Komut gönderilmedi.");
+
+                return await _plcService.SendCommandAsync(command);
+            }
+            catch (Exception ex)
+            {
+                return new ErrorDataResult<ScadaCommandResult>($"Reçete PLC'ye gönderilemedi: {ex.Message}");
+            }
+            finally
+            {
+                _plcRecipeLock.Release();
+            }
+        }
+
+        // Doğrulama sınırlarını DB204'ten okur; PLC'ye ulaşılamazsa varsayılan sınırları döner.
+        private async Task<RecipeLimits> ReadLimitsAsync()
         {
             try
             {
-                batch.Status = "ABORTED";
-                batch.EndTime = DateTime.Now;
-                batch.CompletionNote = note;
-                _context.Batches.Update(batch);
+                var buffer = await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbParam, 0, 62);
 
-                await _context.AuditLogs.AddAsync(new AuditLog
+                return new RecipeLimits
                 {
-                    UserId = userId,
-                    UserIpAddress = userIp,
-                    ActionType = "BATCH_START_ERROR",
-                    ModuleName = "RecipeManager",
-                    Description = $"'{batch.BatchCode}' şarjı iptal edildi (ABORTED). {note}",
-                    IsSuccess = false,
-                    Timestamp = DateTime.Now
-                });
-                await _context.SaveChangesAsync();
-                return true;
+                    MaxPotaTemp = S7Bytes.GetInt(buffer, 2),
+                    FanMinSpeed = S7Bytes.GetInt(buffer, 50),
+                    N2MfcMaxLph = S7Bytes.GetInt(buffer, 58),
+                    NH3MfcMaxLph = S7Bytes.GetInt(buffer, 60)
+                };
             }
-            catch (Exception)
+            catch
             {
-                return false;
+                return new RecipeLimits();
             }
         }
 
-        // Çalışan (RUNNING) şarjı COMPLETED olarak kapatır.
-        public async Task<IResult> StopActiveBatchAsync(string completionNote = "Proses tamamlandı.", int? userId = null, string? userIp = null)
+        // Kullanımdaki reçeteyi adımları sıralı olarak veritabanından yükler; yoksa null döner.
+        private static async Task<Recipe?> LoadRecipeAsync(int id)
         {
-            userIp ??= GetClientIpAddress();
+            await using var context = new NorthwindContext();
 
-            var activeBatch = await _context.Batches.FirstOrDefaultAsync(b => b.Status == "RUNNING");
-            if (activeBatch == null)
+            var recipe = await context.Recipes
+                .AsNoTracking()
+                .Include(r => r.Steps)
+                .FirstOrDefaultAsync(r => r.Id == id && r.IsActive);
+
+            if (recipe != null)
+                recipe.Steps = recipe.Steps.OrderBy(s => s.StepNo).ToList();
+
+            return recipe;
+        }
+
+        // Kapanmamış eski şarjları kapatır ve yeni şarj kaydı açar; başarılıysa şarj kodunu döner.
+        private static async Task<string?> OpenBatchAsync(int recipeId, int userId)
+        {
+            try
             {
-                return new ErrorResult("Kapatılacak aktif bir şarj bulunamadı.");
+                await using var context = new NorthwindContext();
+                DateTime now = DateTime.Now;
+
+                var staleBatches = await context.Batches.Where(b => b.Status == "RUNNING").ToListAsync();
+                foreach (var stale in staleBatches)
+                {
+                    stale.Status = "ABORTED";
+                    stale.EndTime = now;
+                    stale.CompletionNote = "Bitişi kaydedilmemiş şarj; yeni program başlatılırken kapatıldı.";
+                }
+
+                var batch = new Batch
+                {
+                    BatchCode = $"BATCH-{now:yyyyMMdd-HHmmss}",
+                    RecipeId = recipeId,
+                    OperatorUserId = userId,
+                    StartTime = now,
+                    Status = "RUNNING",
+                    CompletionNote = "Program başlatıldı."
+                };
+
+                await context.Batches.AddAsync(batch);
+                await context.SaveChangesAsync();
+                return batch.BatchCode;
             }
-
-            activeBatch.EndTime = DateTime.Now;
-            activeBatch.Status = "COMPLETED";
-            activeBatch.CompletionNote = completionNote;
-
-            _context.Batches.Update(activeBatch);
-
-            await _context.AuditLogs.AddAsync(new AuditLog
+            catch
             {
-                UserId = userId,
-                UserIpAddress = userIp,
-                ActionType = "BATCH_COMPLETED",
-                ModuleName = "RecipeManager",
-                Description = $"'{activeBatch.BatchCode}' kodlu şarj tamamlandı olarak kapatıldı. Not: {completionNote}",
-                IsSuccess = true,
-                Timestamp = DateTime.Now
-            });
+                return null;
+            }
+        }
 
-            await _context.SaveChangesAsync();
+        // Reçete başlık alanlarını kaynak nesneden hedef nesneye kopyalar.
+        private static void CopyHeader(Recipe source, Recipe target)
+        {
+            target.RecipeType = source.RecipeType;
+            target.RecipeName = source.RecipeName;
+            target.TotalStepCount = source.Steps.Count;
+            target.PressureSetPoint = source.PressureSetPoint;
+            target.PressureMode = source.PressureMode;
+            target.PressureModeTime = source.PressureModeTime;
+            target.PressureModeTemp = source.PressureModeTemp;
+            target.GsoakTcId = source.GsoakTcId;
+            target.CO2_Period = source.CO2_Period;
+        }
 
-            return new SuccessResult($"'{activeBatch.BatchCode}' kodlu şarj başarıyla tamamlandı.");
+        // Adımın veritabanı kimliği taşımayan temiz bir kopyasını üretir.
+        private static RecipeStep CloneStep(RecipeStep step)
+        {
+            return new RecipeStep
+            {
+                StepNo = step.StepNo,
+                StepType = step.StepType,
+                Vac_SetPoint = step.Vac_SetPoint,
+                Vac_Timeout = step.Vac_Timeout,
+                TargetTemp = step.TargetTemp,
+                StepTime = step.StepTime,
+                GSoak = step.GSoak,
+                N2_Flow = step.N2_Flow,
+                NH3_Flow = step.NH3_Flow,
+                dNH3_Flow = step.dNH3_Flow,
+                CO2_Perc = step.CO2_Perc,
+                Su_On = step.Su_On,
+                H2_Auto = step.H2_Auto,
+                H2_Set = step.H2_Set,
+                FanSpeed = step.FanSpeed
+            };
         }
     }
 }

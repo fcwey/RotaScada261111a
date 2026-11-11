@@ -1,4 +1,5 @@
 ﻿using Business.Abstract;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Threading.Tasks;
@@ -7,15 +8,18 @@ namespace WebAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize] // Sadece giriş yapmış kullanıcılar istek atabilir
     public class ReportsController : ControllerBase
     {
         private readonly IReportService _reportService;
 
+        // Rapor servis bağımlılığını alır.
         public ReportsController(IReportService reportService)
         {
             _reportService = reportService;
         }
 
+        // Verilen şarjın özet raporunu dosya olarak döner.
         [HttpGet("batch-pdf/{batchId}")]
         public async Task<IActionResult> GetBatchPdf(int batchId)
         {
@@ -27,6 +31,7 @@ namespace WebAPI.Controllers
             return BadRequest(result);
         }
 
+        // Tarih aralığındaki ölçümleri CSV dosyası olarak döner.
         [HttpGet("export-csv")]
         public async Task<IActionResult> ExportCsv([FromQuery] DateTime start, [FromQuery] DateTime end)
         {
