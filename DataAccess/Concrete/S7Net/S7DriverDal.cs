@@ -87,6 +87,49 @@ namespace DataAccess.Concrete.S7Net
             }
         }
 
+        // Bir DB'nin verilen adresinden istenen sayıda ham baytı tek seferde okur.
+        public async Task<byte[]> ReadBytesAsync(int db, int startByte, int count)
+        {
+            if (count <= 0)
+                throw new ArgumentOutOfRangeException(nameof(count), "Okunacak bayt sayısı 0'dan büyük olmalıdır.");
+
+            await _semaphore.WaitAsync();
+            try
+            {
+                EnsureConnected();
+                var buffer = await _plc!.ReadBytesAsync(DataType.DataBlock, db, startByte, count);
+
+                // Eksik gelen veri yanlış çözülmesin diye uzunluk kontrol edilir.
+                if (buffer == null || buffer.Length != count)
+                    throw new InvalidOperationException(
+                        $"DB{db}.DBB{startByte} adresinden {count} bayt okunamadı (gelen: {buffer?.Length ?? 0}).");
+
+                return buffer;
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
+
+        // Verilen ham baytları bir DB'nin belirtilen adresine tek seferde yazar.
+        public async Task WriteBytesAsync(int db, int startByte, byte[] data)
+        {
+            if (data == null || data.Length == 0)
+                throw new ArgumentException("Yazılacak veri boş olamaz.", nameof(data));
+
+            await _semaphore.WaitAsync();
+            try
+            {
+                EnsureConnected();
+                await _plc!.WriteBytesAsync(DataType.DataBlock, db, startByte, data);
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
+
         // Bir DB bloğunu tek seferde okuyup verilen sınıf nesnesine doldurur.
         public async Task<T?> ReadClassAsync<T>(T instance, int dbNumber, int startByte = 0) where T : class, new()
         {
@@ -361,18 +404,19 @@ namespace DataAccess.Concrete.S7Net
         // Float (Real) setpoint değerini belirtilen DB adresine yazar.
         public async Task WriteSetpointAsync(int db, int startByte, float value)
         {
-            if (!IsConnected)
-                throw new InvalidOperationException("PLC bağlantısı aktif değil. Setpoint yazılamadı.");
-
+            await _semaphore.WaitAsync();
             try
             {
-                // S7.Net kütüphanesi float (Real) tiplerini DB alanına otomatik dönüştürerek yazar
-                // Adres: DB{db}.CBD{startByte} (Örn: DB1.CBD10)
-                await _plc.WriteAsync(DataType.DataBlock, db, startByte, value);
+                EnsureConnected();
+                await _plc!.WriteAsync(DataType.DataBlock, db, startByte, value);
             }
             catch (Exception ex)
             {
                 throw new Exception($"PLC DB{db}.DBD{startByte} adresine {value} setpoint değeri yazılırken hata oluştu: {ex.Message}", ex);
+            }
+            finally
+            {
+                _semaphore.Release();
             }
         }
     }
