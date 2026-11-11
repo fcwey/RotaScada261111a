@@ -1,94 +1,110 @@
 ﻿using Business.Abstract;
-using Core.Constants;
-using Core.Utilities.IoC;
 using Core.Utilities.Results;
 using DataAccess.Abstract;
-using DataAccess.Concrete.EntityFramework.Contexts;
-using Entities.Concrete;
 using Entities.Dtos;
-using S7.Net;
+using Entities.Structures;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Business.Concrete
 {
     public class SystemSettingManager : ISystemSettingService
     {
-        private readonly NorthwindContext _context;
         private readonly IS7DriverDal _s7DriverDal;
-        private readonly IUserContextHelper _userContext;
+        private readonly IPlcService _plcService;
 
-        public SystemSettingManager(NorthwindContext context, IS7DriverDal s7DriverDal, IUserContextHelper userContext)
+        // Aynı anda tek parametre yazılmasını sağlar.
+        private readonly SemaphoreSlim _writeLock = new SemaphoreSlim(1, 1);
+
+        // Sürücü ve PLC servis bağımlılıklarını alır.
+        public SystemSettingManager(IS7DriverDal s7DriverDal, IPlcService plcService)
         {
-            _context = context;
             _s7DriverDal = s7DriverDal;
-            _userContext = userContext;
+            _plcService = plcService;
         }
 
-        public async Task<IResult> UpdateCriticalParameterAsync(ParameterUpdateDto dto)
+        // DB204'ü tek blok okuyup katalogdaki her parametreyi güncel değeriyle döner.
+        public async Task<IDataResult<List<ParamValueDto>>> GetParametersAsync()
         {
-            // 1. Parametrenin Gerektirdiği Yetkiyi Belirle
-            string requiredPermission = GetRequiredPermissionForParameter(dto.ParameterKey);
-
-            // 2. Kullanıcının Bu Yetkiye Sahip Olup Olmadığını Kontrol Et
-            var userRolesAndClaims = _userContext.CurrentUserRoles;
-            if (!userRolesAndClaims.Contains(requiredPermission) && !userRolesAndClaims.Contains("Admin"))
+            try
             {
-                // Yetkisiz Erişim Kaydını da AuditLog'a Düşüyoruz (Güvenlik İhlali Tespiti)
-                await LogUnauthorizedAttemptAsync(dto.ParameterKey, requiredPermission);
+                var buffer = await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbParam, 0, ParamCatalog.BlockSize);
 
-                return new ErrorResult($"YETKİSİZ ERİŞİM: '{dto.ParameterKey}' parametresini değiştirmek için '{requiredPermission}' yetkisi gereklidir!");
+                short version = S7Bytes.GetInt(buffer, ScadaLayout.ParamVersionOffset);
+                if (version != ScadaLayout.LayoutVersion)
+                {
+                    return new ErrorDataResult<List<ParamValueDto>>(
+                        $"Şema sürümü uyuşmuyor (DB204: {version}, beklenen: {ScadaLayout.LayoutVersion}).");
+                }
+
+                var list = ParamCatalog.All.Select(p => new ParamValueDto
+                {
+                    Address = p.Address,
+                    Name = p.Name,
+                    Unit = p.Unit,
+                    Description = p.Description,
+                    Default = p.Default,
+                    Min = p.Min,
+                    Max = p.Max,
+                    IsSafety = p.IsSafety,
+                    Value = S7Bytes.GetInt(buffer, p.Address)
+                }).ToList();
+
+                return new SuccessDataResult<List<ParamValueDto>>(list);
+            }
+            catch (Exception ex)
+            {
+                return new ErrorDataResult<List<ParamValueDto>>($"Parametreler okunamadı: {ex.Message}");
+            }
+        }
+
+        // Parametreyi katalog ve aralık kontrolünden geçirip DB204'e yazar, geri okuyup doğrular.
+        public async Task<IDataResult<int>> UpdateParameterAsync(int address, int value)
+        {
+            var definition = ParamCatalog.Find(address);
+            if (definition == null)
+                return new ErrorDataResult<int>($"Adres {address} yazılabilir bir parametre değil.");
+
+            if (value < definition.Min || value > definition.Max)
+            {
+                return new ErrorDataResult<int>(
+                    $"'{definition.Name}' değeri {definition.Min}–{definition.Max} {definition.Unit} aralığında olmalı (girilen: {value}).");
             }
 
-            // 3. Yetki Doğrulandı -> PLC'ye Veriyi Yaz
-            if (!_s7DriverDal.IsConnected)
-                return new ErrorResult("PLC Bağlantısı yok! Parametre yazılamadı.");
-
-            await _s7DriverDal.WriteSetpointAsync(dto.DbNumber, dto.StartByte, dto.NewValue);
-
-            // 4. Otomatik Audit Log Kaydı
-            await _context.AuditLogs.AddAsync(new AuditLog
+            await _writeLock.WaitAsync();
+            try
             {
-                UserId = _userContext.CurrentUserId,
-                Username = _userContext.CurrentUserEmail,
-                UserIpAddress = _userContext.ClientIpAddress,
-                ActionType = "PARAMETER_UPDATE",
-                ModuleName = "SystemSettingManager",
-                Description = $"'{dto.ParameterKey}' parametresi {dto.NewValue} olarak değiştirildi. (PLC DB{dto.DbNumber}.CBD{dto.StartByte})",
-                IsSuccess = true,
-                Timestamp = DateTime.Now
-            });
-            await _context.SaveChangesAsync();
+                var layout = await _plcService.VerifyLayoutAsync();
+                if (!layout.IsSuccess)
+                    return new ErrorDataResult<int>(layout.Message);
 
-            return new SuccessResult($"'{dto.ParameterKey}' parametresi başarıyla güncellendi.");
-        }
+                int oldValue = S7Bytes.GetInt(await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbParam, address, 2), 0);
 
-        // Parametreye Özel Yetki Eşleştirme Haritası
-        private string GetRequiredPermissionForParameter(string parameterKey)
-        {
-            return parameterKey switch
+                var data = new byte[2];
+                S7Bytes.SetInt(data, 0, (short)value);
+                await _s7DriverDal.WriteBytesAsync(ScadaLayout.DbParam, address, data);
+
+                // Yazılan değer geri okunup doğrulanır.
+                int readBack = S7Bytes.GetInt(await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbParam, address, 2), 0);
+                if (readBack != value)
+                {
+                    return new ErrorDataResult<int>(oldValue,
+                        $"'{definition.Name}' yazıldı ama geri okunan değer farklı (yazılan: {value}, okunan: {readBack}).");
+                }
+
+                return new SuccessDataResult<int>(oldValue,
+                    $"'{definition.Name}' {oldValue} → {value} {definition.Unit} olarak değiştirildi.");
+            }
+            catch (Exception ex)
             {
-                "MAX_TEMP_SAFETY_LIMIT" => ParameterPermissions.SafetyLimitsWrite,
-                "GAS_MASS_FLOW_OFFSET" => ParameterPermissions.CalibrationWrite,
-                "ZONE1_SETPOINT_RAMP" => ParameterPermissions.SetpointBasicWrite,
-                _ => ParameterPermissions.SafetyLimitsWrite // Bilinmeyen parametreleri en yüksek güvenlik seviyesine çek
-            };
-        }
-
-        private async Task LogUnauthorizedAttemptAsync(string parameterKey, string requiredPermission)
-        {
-            await _context.AuditLogs.AddAsync(new AuditLog
+                return new ErrorDataResult<int>($"'{definition.Name}' yazılamadı: {ex.Message}");
+            }
+            finally
             {
-                UserId = _userContext.CurrentUserId,
-                Username = _userContext.CurrentUserEmail,
-                UserIpAddress = _userContext.ClientIpAddress,
-                ActionType = "UNAUTHORIZED_PARAMETER_ATTEMPT",
-                ModuleName = "SystemSettingManager",
-                Description = $"YETKİSİZ GİRİŞİM: Kullanıcı '{parameterKey}' parametresini değiştirmeye çalıştı. Gerekli Yetki: {requiredPermission}",
-                IsSuccess = false,
-                Timestamp = DateTime.Now
-            });
-            await _context.SaveChangesAsync();
+                _writeLock.Release();
+            }
         }
     }
 }

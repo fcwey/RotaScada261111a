@@ -27,6 +27,7 @@
             private readonly IPlcService _plcService;
             private readonly IAlarmService _alarmService;
             private readonly IHistorianService _historianService;
+            private readonly IBatchService _batchService;
             private readonly IHubContext<ScadaHub> _scadaHubContext;
             private readonly IHubContext<AlarmHub> _alarmHubContext;
             private readonly string _plcIp;
@@ -43,6 +44,7 @@
                 IPlcService plcService,
                 IAlarmService alarmService,
                 IHistorianService historianService,
+                IBatchService batchService,
                 IHubContext<ScadaHub> scadaHubContext,
                 IHubContext<AlarmHub> alarmHubContext,
                 IConfiguration configuration)
@@ -50,12 +52,13 @@
                 _plcService = plcService;
                 _alarmService = alarmService;
                 _historianService = historianService;
+                _batchService = batchService;
                 _scadaHubContext = scadaHubContext;
                 _alarmHubContext = alarmHubContext;
                 _plcIp = configuration["Plc:IpAddress"] ?? "192.168.0.1";
             }
 
-            // Ana döngü: DB201'i okur, yayınlar, yaşam sinyali yazar, alarmları ve historian kaydını işler.
+            // Ana döngü: DB201'i okur, yayınlar, yaşam sinyali yazar; alarmları, şarj kaydını ve historian'ı işler.
             protected override async Task ExecuteAsync(CancellationToken stoppingToken)
             {
                 await _plcService.ConnectPlcAsync(_plcIp);
@@ -96,7 +99,7 @@
                                 Status = status
                             }, stoppingToken);
 
-                            // Sürüm uyuşmuyorsa adresler güvenilir değildir: yazılmaz, alarm ve historian işlenmez.
+                            // Sürüm uyuşmuyorsa adresler güvenilir değildir: yazılmaz, alarm, şarj ve historian işlenmez.
                             if (versionOk)
                             {
                                 await SendHeartbeatIfDueAsync();
@@ -104,6 +107,7 @@
                                 if (!isStale)
                                 {
                                     await ProcessAlarmsAsync(status, stoppingToken);
+                                    await TrackBatchAsync(status, stoppingToken);
                                     await LogHistoryIfDueAsync(status, stoppingToken);
                                 }
                             }
@@ -171,6 +175,16 @@
                         await _alarmHubContext.Clients.All.SendAsync("ReceiveActiveAlarms", activeAlarms.Data, token);
                         _alarmsPublished = true;
                     }
+                }
+            }
+
+            // Sekans durumunu şarj servisine bildirir; program bittiğinde ya da durduğunda şarj kaydı kapanır.
+            private async Task TrackBatchAsync(ScadaStatus status, CancellationToken token)
+            {
+                var result = await _batchService.TrackSequenceAsync(status.SeqState);
+                if (!result.IsSuccess)
+                {
+                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", result.Message, token);
                 }
             }
 
