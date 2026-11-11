@@ -7,8 +7,8 @@ namespace Business.Abstract
 {
     public interface IAlarmService
     {
-        // PLC'den okunan anlık alarm bit haritasını (Tag -> IsActive) işler
-        Task<IResult> ProcessAlarmBitsAsync(Dictionary<string, bool> alarmStateMap);
+        // DB201'deki aktif ve görülmemiş alarm kelimelerini işler; değişiklik olduysa true döner
+        Task<IDataResult<bool>> ProcessAlarmWordsAsync(short[] activeWords, short[] unackWords);
 
         // Arayüzde gösterilecek aktif alarmları getirir
         Task<IDataResult<List<ActiveAlarmDto>>> GetActiveAlarmsAsync();

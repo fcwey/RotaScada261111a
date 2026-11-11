@@ -1,127 +1,218 @@
 ﻿namespace WebAPI.Services
 {
     using Business.Abstract;
-    using DataAccess.Abstract;
     using Entities.Concrete;
+    using Entities.Dtos;
     using Entities.Structures;
     using global::WebAPI.Hubs;
     using global::WebAPI.Hubs.WebAPI.Hubs;
     using Microsoft.AspNetCore.SignalR;
-    using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Hosting;
-    using S7.Net;
     using System;
-    using System.Collections.Generic;
+    using System.Diagnostics;
     using System.Threading;
     using System.Threading.Tasks;
     namespace WebAPI.Services
     {
         public class PlcPollingBackgroundService : BackgroundService
         {
-            private readonly IS7DriverDal _s7DriverDal;
+            private const int PollMs = 500;             // DB201 okuma aralığı
+            private const int HeartbeatMs = 1000;       // SCADA yaşam sinyali yazma aralığı
+            private const int StaleMs = 3000;           // PLC yaşam sinyali bu kadar değişmezse veri eski sayılır
+            private const int ReconnectMs = 2000;       // Okuma hatasından sonra bekleme
+            private const int LogActiveMs = 10000;      // Program çalışırken historian aralığı
+            private const int LogIdleMs = 60000;        // Beklemede historian aralığı
+
+            private readonly IPlcService _plcService;
+            private readonly IAlarmService _alarmService;
+            private readonly IHistorianService _historianService;
             private readonly IHubContext<ScadaHub> _scadaHubContext;
             private readonly IHubContext<AlarmHub> _alarmHubContext;
-            private readonly IServiceScopeFactory _scopeFactory;
-            private const string PlcIp = "192.168.0.1";
+            private readonly string _plcIp;
 
+            private readonly Stopwatch _sincePlcHeartbeatChange = new Stopwatch();
+            private readonly Stopwatch _sinceScadaHeartbeat = Stopwatch.StartNew();
+            private readonly Stopwatch _sinceLog = new Stopwatch();
+            private short _lastPlcHeartbeat;
+            private bool _hasPlcHeartbeat;
+            private bool _alarmsPublished;
+
+            // Servis bağımlılıklarını alır ve PLC IP adresini ayarlardan okur.
             public PlcPollingBackgroundService(
-                IS7DriverDal s7DriverDal,
+                IPlcService plcService,
+                IAlarmService alarmService,
+                IHistorianService historianService,
                 IHubContext<ScadaHub> scadaHubContext,
                 IHubContext<AlarmHub> alarmHubContext,
-                IServiceScopeFactory scopeFactory)
+                IConfiguration configuration)
             {
-                _s7DriverDal = s7DriverDal;
+                _plcService = plcService;
+                _alarmService = alarmService;
+                _historianService = historianService;
                 _scadaHubContext = scadaHubContext;
                 _alarmHubContext = alarmHubContext;
-                _scopeFactory = scopeFactory;
+                _plcIp = configuration["Plc:IpAddress"] ?? "192.168.0.1";
             }
 
+            // Ana döngü: DB201'i okur, yayınlar, yaşam sinyali yazar, alarmları ve historian kaydını işler.
             protected override async Task ExecuteAsync(CancellationToken stoppingToken)
             {
-                // 1. İlk PLC Bağlantı Denemesi
-                await _s7DriverDal.ConnectAsync(PlcIp, CpuType.S71200, 0, 1);
+                await _plcService.ConnectPlcAsync(_plcIp);
 
                 while (!stoppingToken.IsCancellationRequested)
                 {
-                    if (_s7DriverDal.IsConnected)
+                    int delayMs = PollMs;
+
+                    try
                     {
-                        try
+                        var statusResult = await _plcService.ReadStatusAsync();
+
+                        if (statusResult.Data == null)
                         {
-                            // 2. PLC DB1 (DB_PLC_To_HMI) Bloğunu Tek Pakette Okuma (Bulk Read)
-                            var furnaceData = await _s7DriverDal.ReadClassAsync(new FurnaceDbModel(), dbNumber: 1, startByte: 0);
+                            // Okuma yapılamadı: bağlantı yok sayılır, sürücü bir sonraki okumada yeniden bağlanmayı dener.
+                            _hasPlcHeartbeat = false;
+                            _alarmsPublished = false;
+                            delayMs = ReconnectMs;
 
-                            if (furnaceData != null)
+                            await PublishAsync(new ScadaLiveDto
                             {
-                                // A) SignalR Üzerinden Canlı Telemetri Yayınlama (ScadaHub)
-                                await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaData", new
+                                IsConnected = false,
+                                IsStale = true,
+                                Error = statusResult.Message
+                            }, stoppingToken);
+                        }
+                        else
+                        {
+                            var status = statusResult.Data;
+                            bool versionOk = statusResult.IsSuccess;
+                            bool isStale = UpdateStaleState(status.PlcHeartbeat);
+
+                            await PublishAsync(new ScadaLiveDto
+                            {
+                                IsConnected = true,
+                                IsStale = isStale,
+                                Error = versionOk ? null : statusResult.Message,
+                                Status = status
+                            }, stoppingToken);
+
+                            // Sürüm uyuşmuyorsa adresler güvenilir değildir: yazılmaz, alarm ve historian işlenmez.
+                            if (versionOk)
+                            {
+                                await SendHeartbeatIfDueAsync();
+
+                                if (!isStale)
                                 {
-                                    Timestamp = DateTime.Now,
-                                    Zone1Temperature = furnaceData.Zone1Temperature,
-                                    Zone2Temperature = furnaceData.Zone2Temperature,
-                                    ChamberPressure = furnaceData.ChamberPressure,
-                                    GasFlowRate = furnaceData.GasFlowRate,
-                                    StatusWord = furnaceData.StatusWord,
-                                    AlarmWord = furnaceData.AlarmWord,
-                                    IsConnected = true
-                                }, stoppingToken);
-
-                                // B) Scoped Servisleri Tetikleme (Historian ve Alarm İşleme)
-                                using var scope = _scopeFactory.CreateScope();
-                                var historianService = scope.ServiceProvider.GetRequiredService<IHistorianService>();
-                                var alarmService = scope.ServiceProvider.GetRequiredService<IAlarmService>();
-
-                                // Historian Kaydı (Veri Tabanına Loglama)
-                                await historianService.LogProcessDataAsync(new ProcessDataLog
-                                {
-                                    Timestamp = DateTime.Now,
-                                    Zone1Temperature = furnaceData.Zone1Temperature,
-                                    Zone2Temperature = furnaceData.Zone2Temperature,
-                                    ChamberPressure = furnaceData.ChamberPressure,
-                                    GasFlowRate = furnaceData.GasFlowRate,
-                                    BurnerStatus = (furnaceData.StatusWord & 0x01) != 0
-                                });
-
-                                // Alarm Bit Haritasının Çözümlenmesi ve Yayınlanması (AlarmHub)
-                                var alarmBits = ParseAlarmWord(furnaceData.AlarmWord);
-                                var alarmResult = await alarmService.ProcessAlarmBitsAsync(alarmBits);
-                                // Success yerine IsSuccess kullanıyoruz
-                                if (alarmResult.IsSuccess)
-                                {
-                                    var activeAlarms = await alarmService.GetActiveAlarmsAsync();
-
-                                    if (activeAlarms.IsSuccess && activeAlarms.Data != null)
-                                    {
-                                        await _alarmHubContext.Clients.All.SendAsync("ReceiveActiveAlarms", activeAlarms.Data, stoppingToken);
-                                    }
+                                    await ProcessAlarmsAsync(status, stoppingToken);
+                                    await LogHistoryIfDueAsync(status, stoppingToken);
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", ex.Message, stoppingToken);
-                        }
                     }
-                    else
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
-                        // Bağlantı Koptuysa Yeniden Bağlanmayı Dene
-                        await _s7DriverDal.ConnectAsync(PlcIp, CpuType.S71200, 0, 1);
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", ex.Message, stoppingToken);
                     }
 
-                    // 500 ms Periyotla Polling
-                    await Task.Delay(500, stoppingToken);
+                    await Task.Delay(delayMs, stoppingToken);
                 }
             }
 
-            // PLC AlarmWord (16-bit) İçerisindeki Bitleri Ayrıştırır
-            private Dictionary<string, bool> ParseAlarmWord(ushort alarmWord)
+            // Canlı veri paketini ScadaHub üzerinden bütün ekranlara gönderir.
+            private Task PublishAsync(ScadaLiveDto dto, CancellationToken token)
             {
-                return new Dictionary<string, bool>
+                return _scadaHubContext.Clients.All.SendAsync("ReceiveScadaData", dto, token);
+            }
+
+            // PLC yaşam sinyalinin değişimini izler; 3 sn değişmediyse verinin eski olduğunu döner.
+            private bool UpdateStaleState(short plcHeartbeat)
             {
-                { "ERR_ZONE1_OVERTEMP", (alarmWord & (1 << 0)) != 0 },
-                { "ERR_ZONE2_OVERTEMP", (alarmWord & (1 << 1)) != 0 },
-                { "ERR_PRESSURE_LOW",   (alarmWord & (1 << 2)) != 0 },
-                { "ERR_BURNER_FAULT",   (alarmWord & (1 << 3)) != 0 }
-            };
+                if (!_hasPlcHeartbeat || plcHeartbeat != _lastPlcHeartbeat)
+                {
+                    _lastPlcHeartbeat = plcHeartbeat;
+                    _hasPlcHeartbeat = true;
+                    _sincePlcHeartbeatChange.Restart();
+                    return false;
+                }
+
+                return _sincePlcHeartbeatChange.ElapsedMilliseconds >= StaleMs;
+            }
+
+            // Son yazmadan beri 1 sn geçtiyse SCADA yaşam sinyalini DB200'e yazar.
+            private async Task SendHeartbeatIfDueAsync()
+            {
+                if (_sinceScadaHeartbeat.ElapsedMilliseconds < HeartbeatMs)
+                    return;
+
+                _sinceScadaHeartbeat.Restart();
+                await _plcService.WriteHeartbeatAsync();
+            }
+
+            // Alarm bitlerini işler; değişiklik olduysa aktif alarm listesini AlarmHub'dan yayınlar.
+            private async Task ProcessAlarmsAsync(ScadaStatus status, CancellationToken token)
+            {
+                var result = await _alarmService.ProcessAlarmWordsAsync(status.AlarmActive, status.AlarmUnack);
+                if (!result.IsSuccess)
+                {
+                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", result.Message, token);
+                    return;
+                }
+
+                // İlk başarılı okumada ve her değişiklikte liste yeniden gönderilir.
+                if (result.Data || !_alarmsPublished)
+                {
+                    var activeAlarms = await _alarmService.GetActiveAlarmsAsync();
+                    if (activeAlarms.IsSuccess && activeAlarms.Data != null)
+                    {
+                        await _alarmHubContext.Clients.All.SendAsync("ReceiveActiveAlarms", activeAlarms.Data, token);
+                        _alarmsPublished = true;
+                    }
+                }
+            }
+
+            // Program çalışırken 10 sn'de, beklemede 60 sn'de bir ölçümleri historian tablosuna yazar.
+            private async Task LogHistoryIfDueAsync(ScadaStatus status, CancellationToken token)
+            {
+                int intervalMs = status.SeqState == 0 ? LogIdleMs : LogActiveMs;
+                if (_sinceLog.IsRunning && _sinceLog.ElapsedMilliseconds < intervalMs)
+                    return;
+
+                _sinceLog.Restart();
+
+                try
+                {
+                    await _historianService.LogProcessDataAsync(new ProcessDataLog
+                    {
+                        Timestamp = DateTime.Now,
+                        SeqState = status.SeqState,
+                        ActiveStep = status.ActiveStep,
+                        TempPota = status.TempPota,
+                        TempAlt = status.TempAlt,
+                        TempUst = status.TempUst,
+                        TempPotaAlt = status.TempPotaAlt,
+                        TempPotaUst = status.TempPotaUst,
+                        TempMalzeme = status.TempMalzeme,
+                        TempSet = status.TempSet,
+                        Pressure = status.Pressure,
+                        PressureSet = status.PressureSet,
+                        N2FlowAct = status.N2FlowAct,
+                        NH3FlowAct = status.NH3FlowAct,
+                        H2Act = status.H2Act,
+                        Kn = status.Kn,
+                        HeatOutAlt = status.HeatOutAlt,
+                        HeatOutUst = status.HeatOutUst,
+                        FanSpeedAct = status.FanSpeedAct
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // Veritabanı hatası canlı veriyi durdurmasın diye yalnızca bildirilir.
+                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", $"Historian kaydı yazılamadı: {ex.Message}", token);
+                }
             }
         }
     }

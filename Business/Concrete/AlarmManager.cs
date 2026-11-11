@@ -3,6 +3,8 @@ using Core.Utilities.Results;
 using DataAccess.Abstract;
 using Entities.Concrete;
 using Entities.Dtos;
+using Entities.Structures;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -13,45 +15,114 @@ namespace Business.Concrete
     {
         private readonly IAlarmDal _alarmDal;
 
-        public AlarmManager(IAlarmDal alarmDal)
+        // Aynı anda tek alarm işleme çalışmasını sağlar.
+        private readonly SemaphoreSlim _processLock = new SemaphoreSlim(1, 1);
+
+        private short[]? _lastActive;   // Son işlenen aktif alarm kelimeleri
+        private short[]? _lastUnack;    // Son işlenen görülmemiş alarm kelimeleri
+
+        // Bağımlılıkları alır ve ayarlardaki alarm sınıfı değişikliklerini yükler.
+        public AlarmManager(IAlarmDal alarmDal, IConfiguration configuration)
         {
             _alarmDal = alarmDal;
+            LoadAlarmClassOverrides(configuration);
         }
 
-        public async Task<IResult> ProcessAlarmBitsAsync(Dictionary<string, bool> alarmStateMap)
+        // appsettings içindeki AlarmClasses bölümünü okuyup alarm kataloğuna uygular.
+        private static void LoadAlarmClassOverrides(IConfiguration configuration)
         {
-            var activeAlarms = await _alarmDal.GetListAsync(a => a.IsActive);
+            var overrides = new Dictionary<int, int>();
 
-            foreach (var (tagName, isRaised) in alarmStateMap)
+            foreach (var item in configuration.GetSection("AlarmClasses").GetChildren())
             {
-                var existingAlarm = activeAlarms.FirstOrDefault(a => a.TagName == tagName);
-
-                // 1. Yeni Alarm Oluştu
-                if (isRaised && existingAlarm == null)
-                {
-                    var newAlarm = new Alarm
-                    {
-                        TagName = tagName,
-                        Description = GetDescriptionByTag(tagName),
-                        PriorityLevel = GetPriorityByTag(tagName),
-                        TriggeredAt = DateTime.Now,
-                        IsActive = true,
-                        IsAcknowledged = false
-                    };
-                    await _alarmDal.AddAsync(newAlarm);
-                }
-                // 2. Alarm Pasife Düştü (Resetted)
-                else if (!isRaised && existingAlarm != null)
-                {
-                    existingAlarm.IsActive = false;
-                    existingAlarm.ResolvedAt = DateTime.Now;
-                    await _alarmDal. UpdateAsync(existingAlarm);
-                }
+                if (int.TryParse(item.Key, out int alarmNo) && int.TryParse(item.Value, out int alarmClass))
+                    overrides[alarmNo] = alarmClass;
             }
 
-            return new SuccessResult("Alarm bitleri başarıyla işlendi.");
+            AlarmCatalog.SetClassOverrides(overrides);
         }
 
+        // PLC alarm bitlerini veritabanındaki kayıtlarla eşitler: gelen alarmı açar, gideni kapatır, reset verileni görüldü yapar.
+        public async Task<IDataResult<bool>> ProcessAlarmWordsAsync(short[] activeWords, short[] unackWords)
+        {
+            await _processLock.WaitAsync();
+            try
+            {
+                // Bitler değişmediyse veritabanına gidilmez.
+                if (_lastActive != null && _lastUnack != null &&
+                    _lastActive.SequenceEqual(activeWords) && _lastUnack.SequenceEqual(unackWords))
+                {
+                    return new SuccessDataResult<bool>(false);
+                }
+
+                var openAlarms = (await _alarmDal.GetListAsync(a => a.IsActive || !a.IsAcknowledged)).ToList();
+                DateTime now = DateTime.Now;
+
+                for (int alarmNo = 1; alarmNo <= AlarmCatalog.MaxAlarmNo; alarmNo++)
+                {
+                    bool isActive = GetAlarmBit(activeWords, alarmNo);
+                    bool isUnack = GetAlarmBit(unackWords, alarmNo);
+                    string tag = AlarmCatalog.GetTag(alarmNo);
+
+                    var records = openAlarms.Where(a => a.TagName == tag).ToList();
+
+                    // Alarm geldi: açık kaydı yoksa yeni kayıt oluşturulur.
+                    if (isActive && !records.Any(a => a.IsActive))
+                    {
+                        await _alarmDal.AddAsync(new Alarm
+                        {
+                            TagName = tag,
+                            Description = AlarmCatalog.GetText(alarmNo),
+                            PriorityLevel = AlarmCatalog.GetPriority(alarmNo),
+                            TriggeredAt = now,
+                            IsActive = true,
+                            IsAcknowledged = !isUnack,
+                            AcknowledgedAt = isUnack ? null : now
+                        });
+                    }
+
+                    foreach (var record in records)
+                    {
+                        bool changed = false;
+
+                        // Alarm gitti: açık kayıt kapatılır.
+                        if (!isActive && record.IsActive)
+                        {
+                            record.IsActive = false;
+                            record.ResolvedAt = now;
+                            changed = true;
+                        }
+
+                        // PLC'de reset verildi: kayıt görüldü olarak işaretlenir.
+                        if (!isUnack && !record.IsAcknowledged)
+                        {
+                            record.IsAcknowledged = true;
+                            record.AcknowledgedAt = now;
+                            changed = true;
+                        }
+
+                        if (changed)
+                            await _alarmDal.UpdateAsync(record);
+                    }
+                }
+
+                // Kayıt başarılıysa son durum saklanır; hata olursa bir sonraki çevrimde yeniden denenir.
+                _lastActive = (short[])activeWords.Clone();
+                _lastUnack = (short[])unackWords.Clone();
+
+                return new SuccessDataResult<bool>(true);
+            }
+            catch (Exception ex)
+            {
+                return new ErrorDataResult<bool>(false, $"Alarm bitleri işlenemedi: {ex.Message}");
+            }
+            finally
+            {
+                _processLock.Release();
+            }
+        }
+
+        // Aktif alarmları arayüz için listeler.
         public async Task<IDataResult<List<ActiveAlarmDto>>> GetActiveAlarmsAsync()
         {
             var activeAlarms = await _alarmDal.GetListAsync(a => a.IsActive);
@@ -68,6 +139,7 @@ namespace Business.Concrete
             return new SuccessDataResult<List<ActiveAlarmDto>>(dtos);
         }
 
+        // Operatörün bir alarm kaydını notuyla birlikte onaylamasını kaydeder.
         public async Task<IResult> AcknowledgeAlarmAsync(int alarmId, int userId, string? userNote = null)
         {
             var alarm = await _alarmDal.GetAsync(a => a.Id == alarmId);
@@ -86,6 +158,7 @@ namespace Business.Concrete
             return new SuccessResult("Alarm başarıyla onaylandı (ACK).");
         }
 
+        // Tarih aralığı ve önceliğe göre geçmiş alarm kayıtlarını getirir.
         public async Task<IDataResult<List<AlarmHistoryDto>>> GetAlarmHistoryAsync(DateTime start, DateTime end, int? priorityLevel = null)
         {
             var history = await _alarmDal.GetListAsync(a =>
@@ -108,20 +181,12 @@ namespace Business.Concrete
             return new SuccessDataResult<List<AlarmHistoryDto>>(dtos);
         }
 
-        private string GetDescriptionByTag(string tag) => tag switch
+        // Alarm numarasını (1'den başlar) kelime ve bit konumuna çevirip biti okur.
+        private static bool GetAlarmBit(short[] words, int alarmNo)
         {
-            "ERR_ZONE1_OVERTEMP" => "Bölge 1 Aşırı Sıcaklık İhlali",
-            "ERR_PRESSURE_LOW" => "Hazne Basıncı Düşük",
-            "ERR_BURNER_FAULT" => "Yakıcı Arızası / Alev Kopması",
-            _ => "Tanımsız Sistem Alarımı"
-        };
-
-        private int GetPriorityByTag(string tag) => tag switch
-        {
-            "ERR_ZONE1_OVERTEMP" => 3, // Critical
-            "ERR_BURNER_FAULT" => 3,   // Critical
-            "ERR_PRESSURE_LOW" => 2,   // Warning
-            _ => 1                     // Info
-        };
+            int word = (alarmNo - 1) / 16;
+            int bit = (alarmNo - 1) % 16;
+            return word < words.Length && S7Bytes.GetBit(words[word], bit);
+        }
     }
 }

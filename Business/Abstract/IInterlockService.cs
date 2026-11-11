@@ -8,8 +8,8 @@ namespace Business.Abstract
 {
     public interface IInterlockService
     {
-        // Kritik bir manuel operasyon öncesi PLC emniyet şartlarını denetler
-        Task<IResult> ValidateOperationSafetyAsync(string operationCode, int dbNumber = 1);
+        // Bir işlem için PLC'nin izin bitini okuyup iznin olup olmadığını döner
+        Task<IResult> ValidateOperationSafetyAsync(string operationCode);
 
         // Mimik ekrandaki bileşenlerin anlık durumunu paket halinde getirir
         Task<IDataResult<MimicStateDto>> GetMimicStateAsync();

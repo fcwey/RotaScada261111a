@@ -8,13 +8,19 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
 {
     public class NorthwindContext : DbContext
     {
-        // Veritabanı bağlantısını ve SQL Server ayarlarını yapılandırır.
+        // Uygulama açılışında appsettings içindeki ConnectionStrings:Default değerinden doldurulur.
+        public static string? ConnectionString { get; set; }
+
+        // Hedef MySQL sürümü (8.0 ve üstü, 8.4 LTS dahil)
+        private static readonly MySqlServerVersion MySqlVersion = new MySqlServerVersion(new Version(8, 0, 0));
+
+        // Veritabanı bağlantısını MySQL için yapılandırır.
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseSqlServer(@"Server=(localdb)\mssqllocaldb;Database=RfMalzemeKabul;Trusted_Connection=true", builder =>
-            {
-                builder.EnableRetryOnFailure(0, TimeSpan.FromSeconds(10), null);
-            });
+            if (string.IsNullOrWhiteSpace(ConnectionString))
+                throw new InvalidOperationException("Veritabanı bağlantısı tanımlı değil. appsettings içinde ConnectionStrings:Default değerini girin.");
+
+            optionsBuilder.UseMySql(ConnectionString, MySqlVersion);
             base.OnConfiguring(optionsBuilder);
         }
 
@@ -27,7 +33,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
         public DbSet<ProcessDataLog> ProcessDataLogs { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
 
-        // Mal Kabul ve Kimlik Tabloları
+        // Kimlik Tabloları
         public DbSet<User> Users { get; set; }
         public DbSet<OperationClaim> OperationClaims { get; set; }
         public DbSet<UserOperationClaim> UserOperationClaims { get; set; }
@@ -59,17 +65,16 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
                 .HasMaxLength(30)
                 .IsRequired();
 
-            // 4. Aynı anda yalnızca bir RUNNING şarj olabilir (filtreli unique index)
+            // 4. Şarj durumu: indekslenebilmesi için uzunluk sınırı verilir (RUNNING, COMPLETED, ABORTED)
+            modelBuilder.Entity<Batch>()
+                .Property(b => b.Status)
+                .HasMaxLength(20)
+                .IsRequired();
+
             modelBuilder.Entity<Batch>()
                 .HasIndex(b => b.Status)
-                .IsUnique()
-                .HasFilter("[Status] = 'RUNNING'")
-                .HasDatabaseName("UX_Batch_SingleRunning");
+                .HasDatabaseName("IX_Batch_Status");
         }
-
-        // =========================================================================
-        // OTOMATİK İŞLEM KAYDI (AUDIT LOG) INTERCEPTOR METOTLARI
-        // =========================================================================
 
         // Kaydetmeden önce değişiklikleri toplar, kaydettikten sonra audit log yazar.
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -88,8 +93,9 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
 
             foreach (var entry in ChangeTracker.Entries())
             {
-                // AuditLog tablosunun kendisini ve değişmeyen verileri loglamıyoruz
-                if (entry.Entity is AuditLog || entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
+                // AuditLog tablosunun kendisi, historian ölçüm kayıtları ve değişmeyen veriler loglanmaz.
+                if (entry.Entity is AuditLog || entry.Entity is ProcessDataLog ||
+                    entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
                     continue;
 
                 var auditEntry = new AuditEntry

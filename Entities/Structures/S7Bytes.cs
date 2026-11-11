@@ -17,10 +17,11 @@ namespace Entities.Structures
             return BinaryPrimitives.ReadInt32BigEndian(buffer.AsSpan(offset, 4));
         }
 
-        // Verilen adresteki Real (IEEE 754 tek duyarlık) değeri okur.
+        // Verilen adresteki Real değeri okur; NaN ya da sonsuz gelirse 0 döner.
         public static float GetReal(byte[] buffer, int offset)
         {
-            return BinaryPrimitives.ReadSingleBigEndian(buffer.AsSpan(offset, 4));
+            float value = BinaryPrimitives.ReadSingleBigEndian(buffer.AsSpan(offset, 4));
+            return float.IsFinite(value) ? value : 0f;
         }
 
         // Verilen adresten başlayarak art arda duran Int dizisini okur.

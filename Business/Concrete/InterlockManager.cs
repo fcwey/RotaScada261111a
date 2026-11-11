@@ -1,89 +1,137 @@
 ﻿using Business.Abstract;
 using Core.Utilities.Results;
-using DataAccess.Abstract;
-using Entities.Concrete;
 using Entities.Dtos;
 using Entities.Structures;
-using S7.Net;
 using System;
-using System.Net.ServerSentEvents;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Business.Concrete
 {
-    //*Saha operatörü HMI veya SCADA ekranından kritik bir manuel işlem başlatmak istediğinde(örneğin "Yakıcıyı Çalıştır"
-     //veya "Ana Gaz Vanasını Aç"), sistem bu komutu doğrudan PLC'ye göndermez. Önce bu metot çalışarak fırının fiziksel durumunu denetler:
-    //*SCADA ön yüzündeki (React / HMI) fırın görsel akış şemasında (Mimic Diagram) yer alan vanaların,
-     //fanların, pompaların ve yakıcıların anlık durum renklerini besler:
+    // Ekrandaki düğmelerin etkin/pasif gösterimi ve mimik şema için PLC'nin izin ve cihaz bitlerini okur.
+    // İzinleri SCADA hesaplamaz; yalnızca PLC'nin DB201'de verdiği bitleri aktarır. Son karar her zaman PLC'dedir.
     public class InterlockManager : IInterlockService
     {
-        private readonly IS7DriverDal _s7DriverDal;
+        private readonly IPlcService _plcService;
 
-        public InterlockManager(IS7DriverDal s7DriverDal)
+        // PLC servis bağımlılığını alır.
+        public InterlockManager(IPlcService plcService)
         {
-            _s7DriverDal = s7DriverDal;
+            _plcService = plcService;
         }
 
-        public async Task<IResult> ValidateOperationSafetyAsync(string operationCode, int dbNumber = 1)
+        // İşlem koduna karşılık gelen PLC izin bitini kontrol eder (START, OPEN_LID, NH3, HEAT, WATER).
+        public async Task<IResult> ValidateOperationSafetyAsync(string operationCode)
         {
-            if (!_s7DriverDal.IsConnected)
-                return new ErrorResult("PLC Bağlantısı Yok! Emniyet kontrolü yapılamadı.");
+            var statusResult = await _plcService.ReadStatusAsync();
+            if (!statusResult.IsSuccess || statusResult.Data == null)
+                return new ErrorResult($"PLC durumu okunamadı, izin kontrolü yapılamadı: {statusResult.Message}");
 
-            // PLC DB1 Verisini Okuma
-            var furnaceData = await _s7DriverDal.ReadClassAsync(new FurnaceDbModel(), dbNumber, startByte: 0);
-            if (furnaceData == null)
-                return new ErrorResult("PLC verisi okunamadı.");
+            var status = statusResult.Data;
 
-            // Operasyona Göre Kilit Kontrolleri
             switch (operationCode)
             {
-                case "START_BURNER":
-                    // Yakıcı açılmadan önce hazne basıncı ve soğutma suyu şartı
-                    if (furnaceData.ChamberPressure < 0.5f)
-                        return new ErrorResult("EMNİYET KİLİDİ: Hazne basıncı yetersiz (< 0.5 Bar). Yakıcı başlatılamaz.");
+                case "START":
+                    if (status.Mode != 2)
+                        return new ErrorResult("İZİN YOK: Otomatik mod seçili değil.");
+                    if (!status.HasPermit(0))
+                        return new ErrorResult("İZİN YOK: Başlatma izni yok (kapak, eşanjörde su, güç).");
                     break;
 
-                case "OPEN_GAS_VALVE":
-                    // Gaz vanası açılmadan önce yakıcı hatası olmamalı
-                    bool isBurnerFault = (furnaceData.AlarmWord & (1 << 3)) != 0;
-                    if (isBurnerFault)
-                        return new ErrorResult("EMNİYET KİLİDİ: Yakıcı arızada iken Ana Gaz Vanası açılamaz.");
+                case "OPEN_LID":
+                    if (!status.HasPermit(1))
+                        return new ErrorResult("İZİN YOK: Kapak açılamaz (sıcaklık yüksek ya da azot yıkaması tamamlanmadı).");
+                    break;
+
+                case "NH3":
+                    if (!status.HasPermit(2))
+                        return new ErrorResult("İZİN YOK: Amonyak verilemez.");
+                    break;
+
+                case "HEAT":
+                    if (!status.HasPermit(3))
+                        return new ErrorResult("İZİN YOK: Isıtma yapılamaz.");
+                    break;
+
+                case "WATER":
+                    if (!status.HasPermit(4))
+                        return new ErrorResult("İZİN YOK: Su verilemez.");
                     break;
 
                 default:
-                    break;
+                    return new ErrorResult($"Bilinmeyen işlem kodu: {operationCode}");
             }
 
-            return new SuccessResult("Güvenlik kilitleri doğrulandı. İşlem güvenli.");
+            return new SuccessResult("PLC izni var.");
         }
 
+        // DB201'deki izin ve cihaz bitlerini mimik ekran için tek pakette döner.
         public async Task<IDataResult<MimicStateDto>> GetMimicStateAsync()
         {
-            if (!_s7DriverDal.IsConnected)
+            var statusResult = await _plcService.ReadStatusAsync();
+            if (!statusResult.IsSuccess || statusResult.Data == null)
             {
                 return new SuccessDataResult<MimicStateDto>(new MimicStateDto
                 {
+                    IsConnected = false,
                     SafetyStatusText = "PLC Bağlantısı Kopuk"
                 });
             }
 
-            var furnaceData = await _s7DriverDal.ReadClassAsync(new FurnaceDbModel(), dbNumber: 1, startByte: 0);
-            if (furnaceData == null)
-                return new ErrorDataResult<MimicStateDto>("Mimik durumu okunamadı.");
-
-            ushort status = furnaceData.StatusWord;
+            var status = statusResult.Data;
+            bool hasActiveAlarm = status.AlarmActive.Any(word => word != 0);
 
             var mimicDto = new MimicStateDto
             {
-                Burner1Active = (status & (1 << 0)) != 0,
-                MainGasValveOpen = (status & (1 << 1)) != 0,
-                CoolingFanRunning = (status & (1 << 2)) != 0,
-                WaterPumpRunning = (status & (1 << 3)) != 0,
-                InterlockActive = furnaceData.AlarmWord == 0,
-                SafetyStatusText = furnaceData.AlarmWord == 0 ? "SİSTEM GÜVENLİ" : "EMNİYET İHLALİ / ALARM"
+                IsConnected = true,
+                HasActiveAlarm = hasActiveAlarm,
+                SafetyStatusText = GetSafetyStatusText(status.SeqState, hasActiveAlarm),
+
+                CanStartProgram = status.HasPermit(0),
+                CanOpenLid = status.HasPermit(1),
+                CanFeedAmmonia = status.HasPermit(2),
+                CanHeat = status.HasPermit(3),
+                CanFeedWater = status.HasPermit(4),
+
+                VacuumMotor = status.GetDeviceBit(0, 0),
+                VacuumValve = status.GetDeviceBit(0, 1),
+                ExternalN2Valve = status.GetDeviceBit(0, 2),
+                N2LineValve = status.GetDeviceBit(0, 3),
+                NH3LineValve = status.GetDeviceBit(0, 4),
+                CO2Valve = status.GetDeviceBit(0, 5),
+                WaterDosingPump = status.GetDeviceBit(0, 6),
+                HeaterContactors = status.GetDeviceBit(0, 7),
+                CirculationFan = status.GetDeviceBit(0, 8),
+                CoolingFan = status.GetDeviceBit(0, 9),
+                DamperOpen = status.GetDeviceBit(0, 10),
+                DamperClosed = status.GetDeviceBit(0, 11),
+                PressureControlValveOpen = status.GetDeviceBit(0, 12),
+                DrainValveOpen = status.GetDeviceBit(0, 13),
+                EmergencyN2ValveOpen = status.GetDeviceBit(0, 14),
+                BurnerOn = status.GetDeviceBit(0, 15),
+
+                LidClosedAndLocked = status.GetDeviceBit(1, 0),
+                ExchangerWaterValve = status.GetDeviceBit(1, 1),
+                ExchangerFeedValve = status.GetDeviceBit(1, 2),
+                ExchangerPump = status.GetDeviceBit(1, 3),
+                ExchangerHasWater = status.GetDeviceBit(1, 4),
+                H2SensorPower = status.GetDeviceBit(1, 5),
+                HydraulicMotor = status.GetDeviceBit(1, 6),
+                AmmoniaAtmosphereInside = status.GetDeviceBit(1, 7),
+                ManualMode = status.GetDeviceBit(1, 8),
+                AutoMode = status.GetDeviceBit(1, 9)
             };
 
             return new SuccessDataResult<MimicStateDto>(mimicDto);
+        }
+
+        // Sekans durumu ve alarm bilgisinden operatöre gösterilecek güvenlik metnini üretir.
+        private static string GetSafetyStatusText(short seqState, bool hasActiveAlarm)
+        {
+            if (seqState == 80)
+                return "GÜVENLİ DURDURMA";
+
+            return hasActiveAlarm ? "AKTİF ALARM VAR" : "SİSTEM GÜVENLİ";
         }
     }
 }

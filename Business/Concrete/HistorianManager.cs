@@ -13,31 +13,25 @@ namespace Business.Concrete
 {
     public class HistorianManager : IHistorianService
     {
-        private readonly NorthwindContext _context;
-
-        public HistorianManager(NorthwindContext context)
-        {
-            _context = context;
-        }
-
         // Telemetri kaydını, BatchId boşsa aktif şarjın kimliğiyle etiketleyip veritabanına ekler.
         public async Task<IResult> LogProcessDataAsync(ProcessDataLog dataLog)
         {
-            // DÜZELTİLDİ (Madde 5): BatchId verilmediyse çalışan şarjın id'si atanır, böylece şarj raporları dolu gelir.
+            await using var context = new NorthwindContext();
+
             if (dataLog.BatchId == null)
             {
-                dataLog.BatchId = await GetActiveBatchIdAsync();
+                dataLog.BatchId = await GetActiveBatchIdAsync(context);
             }
 
-            await _context.ProcessDataLogs.AddAsync(dataLog);
-            await _context.SaveChangesAsync();
+            await context.ProcessDataLogs.AddAsync(dataLog);
+            await context.SaveChangesAsync();
             return new SuccessResult("Telemetri verisi kaydedildi.");
         }
 
         // Çalışan (RUNNING) şarjın id'sini döner, çalışan şarj yoksa null döner.
-        private async Task<int?> GetActiveBatchIdAsync()
+        private static async Task<int?> GetActiveBatchIdAsync(NorthwindContext context)
         {
-            return await _context.Batches
+            return await context.Batches
                 .AsNoTracking()
                 .Where(b => b.Status == "RUNNING")
                 .Select(b => (int?)b.Id)
@@ -47,8 +41,9 @@ namespace Business.Concrete
         // Trend grafiği için belirtilen aralıktaki veriyi seyrekleştirerek (downsampling) döner.
         public async Task<IDataResult<List<TrendPointDto>>> GetTrendDataAsync(string tagName, DateTime start, DateTime end, int targetPointCount = 500)
         {
-            // Zaman aralığındaki ham veriyi çeker
-            var rawLogs = await _context.ProcessDataLogs
+            await using var context = new NorthwindContext();
+
+            var rawLogs = await context.ProcessDataLogs
                 .AsNoTracking()
                 .Where(p => p.Timestamp >= start && p.Timestamp <= end)
                 .OrderBy(p => p.Timestamp)
@@ -57,7 +52,6 @@ namespace Business.Concrete
             if (!rawLogs.Any())
                 return new SuccessDataResult<List<TrendPointDto>>(new List<TrendPointDto>());
 
-            // Downsampling (Veri Sıkıştırma) Mantığı
             int totalCount = rawLogs.Count;
             int step = Math.Max(1, totalCount / targetPointCount);
 
@@ -65,12 +59,10 @@ namespace Business.Concrete
             for (int i = 0; i < totalCount; i += step)
             {
                 var item = rawLogs[i];
-                float value = ExtractValueByTag(item, tagName);
-
                 trendPoints.Add(new TrendPointDto
                 {
                     Timestamp = item.Timestamp,
-                    Value = value
+                    Value = ExtractValueByTag(item, tagName)
                 });
             }
 
@@ -80,23 +72,37 @@ namespace Business.Concrete
         // Belirtilen tarihten eski telemetri kayıtlarını siler.
         public async Task<IResult> CompressOldLogsAsync(DateTime olderThan)
         {
-            var oldLogs = await _context.ProcessDataLogs
+            await using var context = new NorthwindContext();
+
+            var oldLogs = await context.ProcessDataLogs
                 .Where(p => p.Timestamp < olderThan)
                 .ToListAsync();
 
-            _context.ProcessDataLogs.RemoveRange(oldLogs);
-            await _context.SaveChangesAsync();
+            context.ProcessDataLogs.RemoveRange(oldLogs);
+            await context.SaveChangesAsync();
 
             return new SuccessResult($"{oldLogs.Count} adet eski telemetri kaydı temizlendi.");
         }
 
         // Tag adına karşılık gelen sayısal değeri telemetri kaydından seçer.
-        private float ExtractValueByTag(ProcessDataLog log, string tagName) => tagName switch
+        private static float ExtractValueByTag(ProcessDataLog log, string tagName) => tagName switch
         {
-            "Zone1Temperature" => log.Zone1Temperature,
-            "Zone2Temperature" => log.Zone2Temperature,
-            "ChamberPressure" => log.ChamberPressure,
-            "GasFlowRate" => log.GasFlowRate,
+            "TempPota" => log.TempPota,
+            "TempAlt" => log.TempAlt,
+            "TempUst" => log.TempUst,
+            "TempPotaAlt" => log.TempPotaAlt,
+            "TempPotaUst" => log.TempPotaUst,
+            "TempMalzeme" => log.TempMalzeme,
+            "TempSet" => log.TempSet,
+            "Pressure" => log.Pressure,
+            "PressureSet" => log.PressureSet,
+            "N2FlowAct" => log.N2FlowAct,
+            "NH3FlowAct" => log.NH3FlowAct,
+            "H2Act" => log.H2Act,
+            "Kn" => log.Kn,
+            "HeatOutAlt" => log.HeatOutAlt,
+            "HeatOutUst" => log.HeatOutUst,
+            "FanSpeedAct" => log.FanSpeedAct,
             _ => 0f
         };
     }
