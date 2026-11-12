@@ -15,6 +15,9 @@ namespace Business.Concrete
 {
     public class AuthManager : IAuthService
     {
+        // Hangi hesapların var olduğu anlaşılmasın diye iki hata için aynı mesaj kullanılır.
+        public const string InvalidLoginMessage = "E-posta ya da şifre hatalı.";
+
         IUserService _userService;
         ITokenHelper _tokenHelper;
 
@@ -33,23 +36,42 @@ namespace Business.Concrete
             return new SuccessDataResult<AccessToken>(accessToken, Messages.AccessTokenCreated);
         }
 
-        // E-posta ve şifreyi doğrular; hesap kapalıysa girişe izin vermez.
+        // E-posta ve şifreyi doğrular; hesap kapalıysa girişe izin vermez, eski biçimli şifreyi yeniler.
         public IDataResult<User> Login(UserForLoginDto userForLoginDto)
         {
             var userToCheck = _userService.GetByMail(userForLoginDto.Email);
             if (userToCheck == null)
             {
-                return new ErrorDataResult<User>(Messages.UserNotFound);
+                return new ErrorDataResult<User>(InvalidLoginMessage);
             }
             if (!HashingHelper.VerifyPasswordHash(userForLoginDto.Password, userToCheck.PasswordHash, userToCheck.PasswordSalt))
             {
-                return new ErrorDataResult<User>(Messages.PasswordError);
+                return new ErrorDataResult<User>(InvalidLoginMessage);
             }
             if (!userToCheck.Status)
             {
                 return new ErrorDataResult<User>("Bu kullanıcı hesabı kapatılmış.");
             }
+
+            UpgradePasswordHashIfNeeded(userToCheck, userForLoginDto.Password);
+
             return new SuccessDataResult<User>(userToCheck, Messages.SuccessfulLogin);
+        }
+
+        // Şifre eski biçimde saklanıyorsa doğrulanmış şifreyle yeni biçime çevirir; hata girişi engellemez.
+        private void UpgradePasswordHashIfNeeded(User user, string password)
+        {
+            if (!HashingHelper.NeedsUpgrade(user.PasswordSalt))
+                return;
+
+            try
+            {
+                _userService.ResetPassword(user.Id, password);
+            }
+            catch
+            {
+                // Yenileme başarısız olursa kullanıcı eski biçimle giriş yapmaya devam eder.
+            }
         }
 
         // Şifreyi hash'leyip yeni kullanıcı kaydı oluşturur.
