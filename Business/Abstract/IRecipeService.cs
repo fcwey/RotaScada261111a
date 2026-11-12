@@ -19,6 +19,6 @@ namespace Business.Abstract
         Task<IDataResult<ScadaCommandResult>> ValidateOnPlcAsync(int recipeId);
         Task<IDataResult<ScadaCommandResult>> StartRecipeAsync(int recipeId, int userId);
         Task<IDataResult<Recipe>> GetActiveRecipeAsync();
-        Task<IDataResult<ScadaCommandResult>> ApplyEditAsync(Recipe editedRecipe);
+        Task<IDataResult<ScadaCommandResult>> ApplyEditAsync(Recipe editedRecipe, int userId);
     }
 }

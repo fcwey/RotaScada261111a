@@ -3,6 +3,8 @@ using Entities.Dtos;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Net;
 
 namespace WebAPI.Controllers
 {
@@ -22,15 +24,21 @@ namespace WebAPI.Controllers
             _logger = logger;
         }
 
-        // E-posta ve şifreyle giriş yapar; art arda hatalı denemede bir süre bekletir.
+        // E-posta ve şifreyle giriş yapar; hesap ya da bilgisayar bekletiliyorsa doğru şifreyi de kabul etmez.
         [HttpPost("login")]
         public ActionResult Login(UserForLoginDto userForLoginDto)
         {
-            string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "bilinmiyor";
+            string clientAddress = GetClientAddress();
             string email = (userForLoginDto.Email ?? string.Empty).Trim().ToLowerInvariant();
-            string key = $"{email}|{clientIp}";
 
-            int blockedSeconds = _loginAttemptTracker.GetBlockedSeconds(key);
+            // İki sayaç tutulur: biri bu hesap için, biri bu bilgisayardan gelen bütün denemeler için.
+            string accountKey = $"hesap|{email}|{clientAddress}";
+            string addressKey = $"adres|{clientAddress}";
+
+            int blockedSeconds = Math.Max(
+                _loginAttemptTracker.GetBlockedSeconds(accountKey),
+                _loginAttemptTracker.GetBlockedSeconds(addressKey));
+
             if (blockedSeconds > 0)
             {
                 return StatusCode(StatusCodes.Status429TooManyRequests,
@@ -40,12 +48,14 @@ namespace WebAPI.Controllers
             var userToLogin = _authService.Login(userForLoginDto);
             if (!userToLogin.IsSuccess)
             {
-                _loginAttemptTracker.RegisterFailure(key);
-                _logger.LogWarning("Hatalı giriş denemesi: {Email} ({ClientIp})", email, clientIp);
+                _loginAttemptTracker.RegisterFailure(accountKey);
+                _loginAttemptTracker.RegisterFailure(addressKey);
+                _logger.LogWarning("Hatalı giriş denemesi: {Email} ({ClientAddress})", email, clientAddress);
                 return BadRequest(userToLogin.Message);
             }
 
-            _loginAttemptTracker.Reset(key);
+            _loginAttemptTracker.Reset(accountKey);
+            _loginAttemptTracker.Reset(addressKey);
 
             var result = _authService.CreateAccessToken(userToLogin.Data);
             if (result.IsSuccess)
@@ -53,6 +63,22 @@ namespace WebAPI.Controllers
                 return Ok(result.Data);
             }
             return BadRequest(result.Message);
+        }
+
+        // İsteği yapan bilgisayarın adresini döner; aynı bilgisayarın farklı yazımlarını (::1, 127.0.0.1) tek adrese indirir.
+        private string GetClientAddress()
+        {
+            IPAddress? address = HttpContext.Connection.RemoteIpAddress;
+            if (address == null)
+                return "bilinmiyor";
+
+            if (IPAddress.IsLoopback(address))
+                return "yerel";
+
+            if (address.IsIPv4MappedToIPv6)
+                address = address.MapToIPv4();
+
+            return address.ToString();
         }
     }
 }

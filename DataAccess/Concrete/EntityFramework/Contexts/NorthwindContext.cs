@@ -30,6 +30,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
         public DbSet<Recipe> Recipes { get; set; }
         public DbSet<RecipeStep> RecipeSteps { get; set; } //  (20 Adımlı Reçete Detayları)
         public DbSet<Batch> Batches { get; set; }
+        public DbSet<BatchRecipeRevision> BatchRecipeRevisions { get; set; }
         public DbSet<ProcessDataLog> ProcessDataLogs { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
 
@@ -65,7 +66,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
                 .HasMaxLength(30)
                 .IsRequired();
 
-            // 4. Şarj durumu: indekslenebilmesi için uzunluk sınırı verilir (RUNNING, COMPLETED, ABORTED)
+            // 4. Şarj durumu: indekslenebilmesi için uzunluk sınırı verilir (RUNNING, COMPLETED, ABORTED, UNKNOWN)
             modelBuilder.Entity<Batch>()
                 .Property(b => b.Status)
                 .HasMaxLength(20)
@@ -74,6 +75,18 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
             modelBuilder.Entity<Batch>()
                 .HasIndex(b => b.Status)
                 .HasDatabaseName("IX_Batch_Status");
+
+            // 5. Şarjın reçete kopyaları: şarj silinirse kopyaları da silinir
+            modelBuilder.Entity<BatchRecipeRevision>()
+                .Property(r => r.Reason)
+                .HasMaxLength(20)
+                .IsRequired();
+
+            modelBuilder.Entity<BatchRecipeRevision>()
+                .HasOne<Batch>()
+                .WithMany()
+                .HasForeignKey(r => r.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
 
         // Kaydetmeden önce değişiklikleri toplar, kaydettikten sonra audit log yazar.
@@ -93,8 +106,8 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
 
             foreach (var entry in ChangeTracker.Entries())
             {
-                // AuditLog tablosunun kendisi, historian ölçüm kayıtları ve değişmeyen veriler loglanmaz.
-                if (entry.Entity is AuditLog || entry.Entity is ProcessDataLog ||
+                // AuditLog'un kendisi, ölçüm kayıtları, reçete kopyaları ve değişmeyen veriler loglanmaz.
+                if (entry.Entity is AuditLog || entry.Entity is ProcessDataLog || entry.Entity is BatchRecipeRevision ||
                     entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
                     continue;
 

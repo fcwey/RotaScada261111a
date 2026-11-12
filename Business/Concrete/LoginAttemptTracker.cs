@@ -1,4 +1,5 @@
 ﻿using Business.Abstract;
+using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,17 +9,33 @@ namespace Business.Concrete
     // Art arda hatalı giriş denemelerini sayar ve sınır aşılınca bir süre bekletir (bellekte tutulur)
     public class LoginAttemptTracker : ILoginAttemptTracker
     {
-        public const int MaxFailures = 5;       // Bu kadar hatalı denemeden sonra bekletme başlar
-        public const int BlockSeconds = 60;     // Bekletme süresi
-        public const int ForgetMinutes = 15;    // Bu kadar süre deneme olmazsa sayaç unutulur
-
+        private const int DefaultMaxFailures = 5;
+        private const int DefaultBlockSeconds = 60;
+        private const int DefaultForgetMinutes = 15;
         private const int CleanupThreshold = 1000;
 
         private readonly object _lock = new object();
         private readonly Dictionary<string, Attempt> _attempts = new();
 
+        public int MaxFailures { get; } = DefaultMaxFailures;       // Bu kadar hatalı denemeden sonra bekletme başlar
+        public int BlockSeconds { get; } = DefaultBlockSeconds;     // Bekletme süresi
+        public int ForgetMinutes { get; } = DefaultForgetMinutes;   // Bu kadar süre deneme olmazsa sayaç unutulur
+
         // Şimdiki zamanı veren işlev; testlerde zamanı ilerletebilmek için değiştirilebilir.
         public Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
+
+        // Varsayılan değerlerle (5 deneme, 60 saniye, 15 dakika) sayaç oluşturur; testler bunu kullanır.
+        public LoginAttemptTracker()
+        {
+        }
+
+        // Değerleri appsettings içindeki "Login" bölümünden okur; eksik ya da geçersiz olanlarda varsayılanı kullanır.
+        public LoginAttemptTracker(IConfiguration configuration)
+        {
+            MaxFailures = ReadPositive(configuration, "Login:MaxFailures", DefaultMaxFailures);
+            BlockSeconds = ReadPositive(configuration, "Login:BlockSeconds", DefaultBlockSeconds);
+            ForgetMinutes = ReadPositive(configuration, "Login:ForgetMinutes", DefaultForgetMinutes);
+        }
 
         // Anahtar bekletiliyorsa kalan saniyeyi, bekletilmiyorsa 0 döner.
         public int GetBlockedSeconds(string key)
@@ -67,6 +84,12 @@ namespace Business.Concrete
             {
                 _attempts.Remove(key);
             }
+        }
+
+        // Ayardaki değeri okur; yoksa, sayı değilse ya da 1'den küçükse varsayılanı döner.
+        private static int ReadPositive(IConfiguration configuration, string key, int defaultValue)
+        {
+            return int.TryParse(configuration[key], out int value) && value > 0 ? value : defaultValue;
         }
 
         // Süresi geçmiş kayıtları bellekten temizler.

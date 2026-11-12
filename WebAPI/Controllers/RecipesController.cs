@@ -122,14 +122,14 @@ namespace WebAPI.Controllers
             return BadRequest(result);
         }
 
-        // Çalışan programı gönderilen reçeteyle değiştirir; Plc.ProgramEdit ya da Admin yetkisi gerekir.
+        // Çalışan programı gönderilen reçeteyle değiştirir ve değişikliği şarj kaydına işler; Plc.ProgramEdit ya da Admin yetkisi gerekir.
         [HttpPost("apply-edit")]
         public async Task<IActionResult> ApplyEdit([FromBody] Recipe editedRecipe)
         {
             if (!HasAnyRole(PlcPermissions.Admin, PlcPermissions.ProgramEdit))
                 return Forbidden(PlcPermissions.ProgramEdit);
 
-            var result = await _recipeService.ApplyEditAsync(editedRecipe);
+            var result = await _recipeService.ApplyEditAsync(editedRecipe, User.GetUserId());
             await LogAsync(result.IsSuccess ? "RECIPE_APPLY_EDIT" : "RECIPE_APPLY_EDIT_REJECTED",
                 $"Çalışan reçete id {editedRecipe.Id}. Sonuç: {result.Message}");
 

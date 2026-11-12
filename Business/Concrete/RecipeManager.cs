@@ -147,7 +147,7 @@ namespace Business.Concrete
             return await SendRecipeAsync(recipe, ScadaCommandCode.Validate);
         }
 
-        // Reçeteyi DB202'ye yazar, Start komutunu gönderir ve kabul edilirse şarj kaydını açar.
+        // Reçeteyi DB202'ye yazar, Start komutunu gönderir; kabul edilirse şarjı açıp reçetenin kopyasını saklar.
         public async Task<IDataResult<ScadaCommandResult>> StartRecipeAsync(int recipeId, int userId)
         {
             var recipe = await LoadRecipeAsync(recipeId);
@@ -159,7 +159,7 @@ namespace Business.Concrete
                 return result;
 
             // Program PLC'de başladı; şarj kaydı bundan sonra açılır.
-            string? batchCode = await OpenBatchAsync(recipeId, userId);
+            string? batchCode = await OpenBatchAsync(recipe, userId);
 
             string message = batchCode != null
                 ? $"'{recipe.RecipeName}' programı başladı. Şarj kodu: {batchCode}"
@@ -182,10 +182,20 @@ namespace Business.Concrete
             }
         }
 
-        // Çalışan programın değiştirilmiş halini DB202'ye yazar ve ApplyEdit komutunu gönderir.
-        public async Task<IDataResult<ScadaCommandResult>> ApplyEditAsync(Recipe editedRecipe)
+        // Çalışan programın değiştirilmiş halini PLC'ye gönderir; kabul edilirse değişikliği açık şarja işler.
+        public async Task<IDataResult<ScadaCommandResult>> ApplyEditAsync(Recipe editedRecipe, int userId)
         {
-            return await SendRecipeAsync(editedRecipe, ScadaCommandCode.ApplyEdit);
+            var result = await SendRecipeAsync(editedRecipe, ScadaCommandCode.ApplyEdit);
+            if (!result.IsSuccess)
+                return result;
+
+            bool recorded = await AddEditRevisionAsync(editedRecipe, userId);
+
+            string message = recorded
+                ? "Değişiklik uygulandı ve şarj kaydına işlendi."
+                : "Değişiklik uygulandı ama şarj kaydına işlenemedi (açık şarj bulunamadı ya da veritabanına ulaşılamadı).";
+
+            return new SuccessDataResult<ScadaCommandResult>(result.Data, message);
         }
 
         // Reçeteyi doğrular, DB202'ye yazar, geri okuyup karşılaştırır ve verilen komutu gönderir.
@@ -261,8 +271,8 @@ namespace Business.Concrete
             return recipe;
         }
 
-        // Kapanmamış eski şarjları kapatır ve yeni şarj kaydı açar; başarılıysa şarj kodunu döner.
-        private static async Task<string?> OpenBatchAsync(int recipeId, int userId)
+        // Kapanmamış eski şarjları kapatır, yeni şarjı açar ve reçetenin başlangıç kopyasını saklar; şarj kodunu döner.
+        private static async Task<string?> OpenBatchAsync(Recipe recipe, int userId)
         {
             try
             {
@@ -280,7 +290,7 @@ namespace Business.Concrete
                 var batch = new Batch
                 {
                     BatchCode = $"BATCH-{now:yyyyMMdd-HHmmss}",
-                    RecipeId = recipeId,
+                    RecipeId = recipe.Id,
                     OperatorUserId = userId,
                     StartTime = now,
                     Status = "RUNNING",
@@ -289,11 +299,56 @@ namespace Business.Concrete
 
                 await context.Batches.AddAsync(batch);
                 await context.SaveChangesAsync();
+
+                // Reçetenin PLC'ye gönderilen hali şarja kopyalanır; reçete sonradan değişse de bu kayıt değişmez.
+                await context.BatchRecipeRevisions.AddAsync(new BatchRecipeRevision
+                {
+                    BatchId = batch.Id,
+                    Timestamp = now,
+                    UserId = userId,
+                    Reason = "START",
+                    RecipeJson = RecipeSnapshot.Serialize(recipe)
+                });
+                await context.SaveChangesAsync();
+
                 return batch.BatchCode;
             }
             catch
             {
                 return null;
+            }
+        }
+
+        // Çalışırken yapılan değişikliği açık şarjın reçete geçmişine ekler; eklendiyse true döner.
+        private static async Task<bool> AddEditRevisionAsync(Recipe editedRecipe, int userId)
+        {
+            try
+            {
+                await using var context = new NorthwindContext();
+
+                var batch = await context.Batches
+                    .Where(b => b.Status == "RUNNING")
+                    .OrderByDescending(b => b.StartTime)
+                    .FirstOrDefaultAsync();
+
+                if (batch == null)
+                    return false;
+
+                await context.BatchRecipeRevisions.AddAsync(new BatchRecipeRevision
+                {
+                    BatchId = batch.Id,
+                    Timestamp = DateTime.Now,
+                    UserId = userId,
+                    Reason = "EDIT",
+                    RecipeJson = RecipeSnapshot.Serialize(editedRecipe)
+                });
+                await context.SaveChangesAsync();
+
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
