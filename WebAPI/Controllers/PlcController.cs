@@ -6,9 +6,11 @@ using Entities.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using WebAPI.Hubs.WebAPI.Hubs;
 
 namespace WebAPI.Controllers
 {
@@ -19,12 +21,20 @@ namespace WebAPI.Controllers
     {
         private readonly IPlcService _plcService;
         private readonly IAuditTrailService _auditTrailService;
+        private readonly IBatchService _batchService;
+        private readonly IHubContext<ScadaHub> _scadaHubContext;
 
-        // PLC ve işlem kaydı servis bağımlılıklarını alır.
-        public PlcController(IPlcService plcService, IAuditTrailService auditTrailService)
+        // PLC, işlem kaydı, şarj ve ekran bildirimi bağımlılıklarını alır.
+        public PlcController(
+            IPlcService plcService,
+            IAuditTrailService auditTrailService,
+            IBatchService batchService,
+            IHubContext<ScadaHub> scadaHubContext)
         {
             _plcService = plcService;
             _auditTrailService = auditTrailService;
+            _batchService = batchService;
+            _scadaHubContext = scadaHubContext;
         }
 
         // Verilen IP adresindeki PLC'ye bağlanır; Admin ya da PLC ayar yetkisi gerekir.
@@ -51,7 +61,7 @@ namespace WebAPI.Controllers
             return BadRequest(result);
         }
 
-        // Komutun gerektirdiği rolü kontrol eder, PLC'ye gönderir ve sonucu işlem kaydına yazar.
+        // Komutun gerektirdiği rolü kontrol eder, PLC'ye gönderir, sonucu kaydeder; planı değiştiren komutu şarja işler.
         [HttpPost("command")]
         public async Task<IActionResult> SendCommand(
             [FromQuery] short code,
@@ -79,8 +89,36 @@ namespace WebAPI.Controllers
             await LogCommandAsync(result.IsSuccess ? "PLC_COMMAND" : "PLC_COMMAND_REJECTED",
                 commandCode, param1, param2, param3, result.Message);
 
-            if (result.IsSuccess) return Ok(result);
+            if (result.IsSuccess)
+            {
+                await RecordPlanEventAsync(commandCode, param1, param2);
+                return Ok(result);
+            }
             return BadRequest(result);
+        }
+
+        // Adıma atlama ve soğutmaya geçiş komutlarını şarjın plan geçmişine işler ve ekranlara plan bildirimi gönderir.
+        private async Task RecordPlanEventAsync(ScadaCommandCode code, short param1, short param2)
+        {
+            string? reason = code switch
+            {
+                ScadaCommandCode.GotoStep => "GOTO",
+                ScadaCommandCode.SkipToCooling => "SKIP",
+                _ => null
+            };
+
+            if (reason == null)
+                return;
+
+            try
+            {
+                await _batchService.RecordPlanEventAsync(reason, param1, param2, User.GetUserId());
+                await _scadaHubContext.Clients.All.SendAsync("ReceiveProfileChanged");
+            }
+            catch
+            {
+                // Plan kaydı ya da bildirim başarısız olsa da komutun sonucu operatöre dönmelidir.
+            }
         }
 
         // Komut kodunun gerektirdiği rolü döner; null ise giriş yapmış olmak yeterlidir.

@@ -23,9 +23,10 @@
             private const int HeartbeatMs = 1000;       // SCADA yaşam sinyali yazma aralığı
             private const int StaleMs = 3000;           // PLC yaşam sinyali bu kadar değişmezse veri eski sayılır
             private const int ReconnectMs = 2000;       // Okuma hatasından sonra bekleme
-            private const int LogActiveMs = 10000;      // Program çalışırken historian aralığı
-            private const int LogIdleMs = 60000;        // Beklemede historian aralığı
             private const int ErrorLogSeconds = 60;     // Aynı türden hata en fazla bu sıklıkta log dosyasına yazılır
+
+            private const int DefaultLogActiveSeconds = 10;   // Ayarda yoksa: program çalışırken kayıt aralığı
+            private const int DefaultLogIdleSeconds = 60;     // Ayarda yoksa: beklemede kayıt aralığı
 
             private readonly IPlcService _plcService;
             private readonly IAlarmService _alarmService;
@@ -33,6 +34,7 @@
             private readonly IBatchService _batchService;
             private readonly IHubContext<ScadaHub> _scadaHubContext;
             private readonly IHubContext<AlarmHub> _alarmHubContext;
+            private readonly IConfiguration _configuration;
             private readonly ILogger<PlcPollingBackgroundService> _logger;
             private readonly string _plcIp;
 
@@ -67,6 +69,7 @@
                 _batchService = batchService;
                 _scadaHubContext = scadaHubContext;
                 _alarmHubContext = alarmHubContext;
+                _configuration = configuration;
                 _logger = logger;
                 _plcIp = configuration["Plc:IpAddress"] ?? "192.168.0.1";
             }
@@ -297,11 +300,20 @@
                 }
             }
 
-            // Program çalışırken 10 sn'de, beklemede 60 sn'de bir ölçümleri historian tablosuna yazar.
+            // Ayardaki aralığa göre ölçümleri historian tablosuna yazar; beklemede aralık 0 ise hiç yazmaz.
             private async Task LogHistoryIfDueAsync(ScadaStatus status, CancellationToken token)
             {
-                int intervalMs = status.SeqState == 0 ? LogIdleMs : LogActiveMs;
-                if (_sinceLog.IsRunning && _sinceLog.ElapsedMilliseconds < intervalMs)
+                bool isIdle = status.SeqState == 0;
+
+                // Aralıklar her seferinde ayardan okunur; appsettings değişince yeniden başlatmadan geçerli olur.
+                int intervalSeconds = isIdle
+                    ? ReadSeconds("Historian:IdleSeconds", DefaultLogIdleSeconds, 0, 86400)
+                    : ReadSeconds("Historian:ActiveSeconds", DefaultLogActiveSeconds, 1, 3600);
+
+                if (intervalSeconds == 0)
+                    return;
+
+                if (_sinceLog.IsRunning && _sinceLog.ElapsedMilliseconds < intervalSeconds * 1000L)
                     return;
 
                 _sinceLog.Restart();
@@ -335,6 +347,15 @@
                 {
                     await ReportErrorAsync("historian", $"Historian kaydı yazılamadı: {ex.Message}", ex, token);
                 }
+            }
+
+            // Ayardan saniye değeri okur; yoksa ya da sayı değilse varsayılanı kullanır, sınırların dışındaysa sınıra çeker.
+            private int ReadSeconds(string key, int defaultValue, int min, int max)
+            {
+                if (!int.TryParse(_configuration[key], out int value))
+                    return defaultValue;
+
+                return Math.Clamp(value, min, max);
             }
         }
     }

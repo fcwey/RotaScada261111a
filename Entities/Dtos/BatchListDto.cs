@@ -18,17 +18,19 @@ namespace Entities.Dtos
         public string? CompletionNote { get; set; }
     }
 
-    // Şarjın reçetesinin belirli bir andaki hali
+    // Şarjın planını değiştiren bir olay
     public class BatchRevisionDto : IDto
     {
         public DateTime Timestamp { get; set; }
         public int UserId { get; set; }
         public string UserEmail { get; set; } = string.Empty;
-        public string Reason { get; set; } = string.Empty;       // START ya da EDIT
-        public Recipe? Recipe { get; set; }
+        public string Reason { get; set; } = string.Empty;       // START, EDIT, GOTO, SKIP
+        public Recipe? Recipe { get; set; }                      // START ve EDIT için reçetenin o anki hali
+        public int? StepNo { get; set; }                         // GOTO için gidilen adım
+        public int? StepMinute { get; set; }                     // GOTO için o adımda geçmiş sayılan dakika
     }
 
-    // Tek bir şarjın ayrıntısı: özet, reçete geçmişi ve şarj sırasındaki alarmlar
+    // Tek bir şarjın ayrıntısı: özet, plan geçmişi ve şarj sırasındaki alarmlar
     public class BatchDetailDto : IDto
     {
         public BatchListDto Batch { get; set; } = new BatchListDto();

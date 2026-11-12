@@ -113,7 +113,7 @@ namespace Business.Concrete
             }
         }
 
-        // Tek şarjın özetini, reçete geçmişini ve şarj sırasında oluşan alarmları getirir.
+        // Tek şarjın özetini, plan geçmişini ve şarj sırasında oluşan alarmları getirir.
         public async Task<IDataResult<BatchDetailDto>> GetBatchDetailAsync(int batchId)
         {
             try
@@ -154,7 +154,9 @@ namespace Business.Concrete
                         UserId = r.UserId,
                         UserEmail = users.TryGetValue(r.UserId, out var email) ? email : string.Empty,
                         Reason = r.Reason,
-                        Recipe = RecipeSnapshot.Deserialize(r.RecipeJson)
+                        Recipe = RecipeSnapshot.Deserialize(r.RecipeJson),
+                        StepNo = r.StepNo,
+                        StepMinute = r.StepMinute
                     }).ToList(),
                     Alarms = alarms.Select(a => new AlarmHistoryDto
                     {
@@ -174,6 +176,44 @@ namespace Business.Concrete
             catch (Exception ex)
             {
                 return new ErrorDataResult<BatchDetailDto>($"Şarj ayrıntısı okunamadı: {ex.Message}");
+            }
+        }
+
+        // Çalışan şarjın plan geçmişine adıma atlama (GOTO) ya da soğutmaya geçiş (SKIP) olayını ekler.
+        public async Task<IResult> RecordPlanEventAsync(string reason, int stepNo, int stepMinute, int userId)
+        {
+            if (reason != "GOTO" && reason != "SKIP")
+                return new ErrorResult($"Bilinmeyen plan olayı: {reason}");
+
+            try
+            {
+                await using var context = new NorthwindContext();
+
+                var batch = await context.Batches
+                    .Where(b => b.Status == "RUNNING")
+                    .OrderByDescending(b => b.StartTime)
+                    .FirstOrDefaultAsync();
+
+                if (batch == null)
+                    return new ErrorResult("Çalışan şarj yok; plan olayı kaydedilmedi.");
+
+                await context.BatchRecipeRevisions.AddAsync(new BatchRecipeRevision
+                {
+                    BatchId = batch.Id,
+                    Timestamp = DateTime.Now,
+                    UserId = userId,
+                    Reason = reason,
+                    RecipeJson = string.Empty,
+                    StepNo = reason == "GOTO" ? stepNo : null,
+                    StepMinute = reason == "GOTO" ? stepMinute : null
+                });
+                await context.SaveChangesAsync();
+
+                return new SuccessResult("Plan olayı şarj kaydına işlendi.");
+            }
+            catch (Exception ex)
+            {
+                return new ErrorResult($"Plan olayı kaydedilemedi: {ex.Message}");
             }
         }
 

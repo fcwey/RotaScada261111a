@@ -6,8 +6,10 @@ using Entities.Concrete;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using System.Linq;
 using System.Threading.Tasks;
+using WebAPI.Hubs.WebAPI.Hubs;
 
 namespace WebAPI.Controllers
 {
@@ -18,12 +20,14 @@ namespace WebAPI.Controllers
     {
         private readonly IRecipeService _recipeService;
         private readonly IAuditTrailService _auditTrailService;
+        private readonly IHubContext<ScadaHub> _scadaHubContext;
 
-        // Reçete ve işlem kaydı servis bağımlılıklarını alır.
-        public RecipesController(IRecipeService recipeService, IAuditTrailService auditTrailService)
+        // Reçete, işlem kaydı ve ekran bildirimi bağımlılıklarını alır.
+        public RecipesController(IRecipeService recipeService, IAuditTrailService auditTrailService, IHubContext<ScadaHub> scadaHubContext)
         {
             _recipeService = recipeService;
             _auditTrailService = auditTrailService;
+            _scadaHubContext = scadaHubContext;
         }
 
         // Kullanımdaki reçeteleri listeler.
@@ -99,7 +103,7 @@ namespace WebAPI.Controllers
             return BadRequest(result);
         }
 
-        // Reçeteyi PLC'ye yazıp programı başlatır; Plc.Operate ya da Admin yetkisi gerekir.
+        // Reçeteyi PLC'ye yazıp programı başlatır ve ekranlara yeni plan bildirimi gönderir; Plc.Operate ya da Admin yetkisi gerekir.
         [HttpPost("{id:int}/start")]
         public async Task<IActionResult> Start(int id)
         {
@@ -109,7 +113,11 @@ namespace WebAPI.Controllers
             var result = await _recipeService.StartRecipeAsync(id, User.GetUserId());
             await LogAsync(result.IsSuccess ? "RECIPE_START" : "RECIPE_START_REJECTED", $"Reçete id {id}. Sonuç: {result.Message}");
 
-            if (result.IsSuccess) return Ok(result);
+            if (result.IsSuccess)
+            {
+                await NotifyProfileChangedAsync();
+                return Ok(result);
+            }
             return BadRequest(result);
         }
 
@@ -122,7 +130,7 @@ namespace WebAPI.Controllers
             return BadRequest(result);
         }
 
-        // Çalışan programı gönderilen reçeteyle değiştirir ve değişikliği şarj kaydına işler; Plc.ProgramEdit ya da Admin yetkisi gerekir.
+        // Çalışan programı değiştirir, değişikliği şarja işler ve ekranlara plan bildirimi gönderir; Plc.ProgramEdit ya da Admin yetkisi gerekir.
         [HttpPost("apply-edit")]
         public async Task<IActionResult> ApplyEdit([FromBody] Recipe editedRecipe)
         {
@@ -133,8 +141,25 @@ namespace WebAPI.Controllers
             await LogAsync(result.IsSuccess ? "RECIPE_APPLY_EDIT" : "RECIPE_APPLY_EDIT_REJECTED",
                 $"Çalışan reçete id {editedRecipe.Id}. Sonuç: {result.Message}");
 
-            if (result.IsSuccess) return Ok(result);
+            if (result.IsSuccess)
+            {
+                await NotifyProfileChangedAsync();
+                return Ok(result);
+            }
             return BadRequest(result);
+        }
+
+        // Bağlı ekranlara teorik planın değiştiğini bildirir; ekranlar eğriyi yeniden çeker. Gönderim hatası işlemi etkilemez.
+        private async Task NotifyProfileChangedAsync()
+        {
+            try
+            {
+                await _scadaHubContext.Clients.All.SendAsync("ReceiveProfileChanged");
+            }
+            catch
+            {
+                // Bildirim gönderilemese de komutun sonucu operatöre dönmelidir.
+            }
         }
 
         // Kullanıcının verilen rollerden en az birine sahip olup olmadığını döner.
