@@ -15,6 +15,7 @@ namespace Core.Aspects.Autofac.Exception
     {
         private LoggerServiceBase _loggerServiceBase;
 
+        // Kullanılacak logger tipini alır ve örneğini oluşturur.
         public ExceptionLogAspect(Type loggerService)
         {
             if (loggerService.BaseType != typeof(LoggerServiceBase))
@@ -25,31 +26,29 @@ namespace Core.Aspects.Autofac.Exception
             _loggerServiceBase = (LoggerServiceBase)Activator.CreateInstance(loggerService);
         }
 
+        // Servis metodunda hata olduğunda metot bilgisini ve hatayı log dosyasına yazar.
         protected override void OnExeption(IInvocation invocation, System.Exception e)
         {
-            LogDetailWithExcetion logDetailWithExcetion = GetLogDetail(invocation);
-            logDetailWithExcetion.ExceptionMessage = e.Message;
-            _loggerServiceBase.Error(logDetailWithExcetion);
+            _loggerServiceBase.Error(BuildMessage(invocation, e));
         }
 
-        private LogDetailWithExcetion GetLogDetail(IInvocation invocation)
+        // Log satırını üretir; şifre gibi değerler dosyaya düşmesin diye parametrelerin yalnızca adı ve tipi yazılır.
+        private static string BuildMessage(IInvocation invocation, System.Exception e)
         {
-            var logParameters = new List<LogParameter>();
+            var parameters = invocation.GetConcreteMethod().GetParameters();
+            var parts = new List<string>();
+
             for (int i = 0; i < invocation.Arguments.Length; i++)
             {
-                logParameters.Add(new LogParameter
-                {
-                    Name = invocation.GetConcreteMethod().GetParameters()[i].Name,
-                    Value = invocation.Arguments[i],
-                    Type = invocation.Arguments[i] != null ? invocation.Arguments[i].GetType().Name : "" //invocation.Arguments[i].GetType().Name
-                });
+                string name = i < parameters.Length ? parameters[i].Name ?? "?" : "?";
+                string type = invocation.Arguments[i] != null ? invocation.Arguments[i].GetType().Name : "null";
+                parts.Add($"{name}: {type}");
             }
-            var logDetailWithException = new LogDetailWithExcetion
-            {
-                MethodName = invocation.Method.Name,
-                LogParameters = logParameters,
-            };
-            return logDetailWithException;
+
+            string className = invocation.TargetType != null ? invocation.TargetType.Name : "?";
+
+            return $"Servis hatası: {className}.{invocation.Method.Name}({string.Join(", ", parts)})" +
+                   Environment.NewLine + e;
         }
     }
 }

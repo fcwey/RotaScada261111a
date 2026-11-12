@@ -9,7 +9,9 @@
     using Microsoft.AspNetCore.SignalR;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.Hosting;
+    using Microsoft.Extensions.Logging;
     using System;
+    using System.Collections.Concurrent;
     using System.Diagnostics;
     using System.Threading;
     using System.Threading.Tasks;
@@ -23,6 +25,7 @@
             private const int ReconnectMs = 2000;       // Okuma hatasından sonra bekleme
             private const int LogActiveMs = 10000;      // Program çalışırken historian aralığı
             private const int LogIdleMs = 60000;        // Beklemede historian aralığı
+            private const int ErrorLogSeconds = 60;     // Aynı türden hata en fazla bu sıklıkta log dosyasına yazılır
 
             private readonly IPlcService _plcService;
             private readonly IAlarmService _alarmService;
@@ -30,6 +33,7 @@
             private readonly IBatchService _batchService;
             private readonly IHubContext<ScadaHub> _scadaHubContext;
             private readonly IHubContext<AlarmHub> _alarmHubContext;
+            private readonly ILogger<PlcPollingBackgroundService> _logger;
             private readonly string _plcIp;
 
             private readonly Stopwatch _sincePlcHeartbeatChange = new Stopwatch();
@@ -42,6 +46,10 @@
             private volatile ScadaStatus? _latestStatus;
             private volatile bool _alarmsPublished;
 
+            // Log dosyası için: son yazılan bağlantı durumu ve hata türlerinin son yazılma zamanları
+            private string _lastLinkState = string.Empty;
+            private readonly ConcurrentDictionary<string, DateTime> _lastErrorLog = new();
+
             // Servis bağımlılıklarını alır ve PLC IP adresini ayarlardan okur.
             public PlcPollingBackgroundService(
                 IPlcService plcService,
@@ -50,7 +58,8 @@
                 IBatchService batchService,
                 IHubContext<ScadaHub> scadaHubContext,
                 IHubContext<AlarmHub> alarmHubContext,
-                IConfiguration configuration)
+                IConfiguration configuration,
+                ILogger<PlcPollingBackgroundService> logger)
             {
                 _plcService = plcService;
                 _alarmService = alarmService;
@@ -58,12 +67,15 @@
                 _batchService = batchService;
                 _scadaHubContext = scadaHubContext;
                 _alarmHubContext = alarmHubContext;
+                _logger = logger;
                 _plcIp = configuration["Plc:IpAddress"] ?? "192.168.0.1";
             }
 
             // PLC döngüsünü ve veritabanı döngüsünü birbirinden bağımsız olarak çalıştırır.
             protected override async Task ExecuteAsync(CancellationToken stoppingToken)
             {
+                _logger.LogInformation("PLC izleme başladı. Hedef adres: {PlcIp}", _plcIp);
+
                 await Task.WhenAll(
                     RunPlcLoopAsync(stoppingToken),
                     RunDatabaseLoopAsync(stoppingToken));
@@ -90,6 +102,8 @@
                             _alarmsPublished = false;
                             delayMs = ReconnectMs;
 
+                            LogLinkState("KOPUK", statusResult.Message);
+
                             await PublishAsync(new ScadaLiveDto
                             {
                                 IsConnected = false,
@@ -102,6 +116,13 @@
                             var status = statusResult.Data;
                             bool versionOk = statusResult.IsSuccess;
                             bool isStale = UpdateStaleState(status.PlcHeartbeat);
+
+                            if (!versionOk)
+                                LogLinkState("SÜRÜM UYUŞMUYOR", statusResult.Message);
+                            else if (isStale)
+                                LogLinkState("VERİ ESKİ", "PLC yaşam sinyali 3 saniyedir değişmiyor; PLC STOP'ta olabilir.");
+                            else
+                                LogLinkState("BAĞLI", null);
 
                             await PublishAsync(new ScadaLiveDto
                             {
@@ -124,7 +145,7 @@
                     }
                     catch (Exception ex)
                     {
-                        await PublishErrorAsync(ex.Message, stoppingToken);
+                        await ReportErrorAsync("plc", $"PLC döngüsü hatası: {ex.Message}", ex, stoppingToken);
                     }
 
                     await DelayAsync(delayMs, stoppingToken);
@@ -153,11 +174,47 @@
                         catch (Exception ex)
                         {
                             // Veritabanı hatası yalnızca bu döngüyü etkiler; canlı veri akmaya devam eder.
-                            await PublishErrorAsync($"Veritabanı kaydı yapılamadı: {ex.Message}", stoppingToken);
+                            await ReportErrorAsync("db", $"Veritabanı kaydı yapılamadı: {ex.Message}", ex, stoppingToken);
                         }
                     }
 
                     await DelayAsync(PollMs, stoppingToken);
+                }
+            }
+
+            // Bağlantı durumu değiştiyse log dosyasına bir satır yazar; aynı durum sürerken tekrar yazmaz.
+            private void LogLinkState(string state, string? detail)
+            {
+                if (state == _lastLinkState)
+                    return;
+
+                _lastLinkState = state;
+
+                if (state == "BAĞLI")
+                    _logger.LogInformation("PLC durumu: {State}", state);
+                else
+                    _logger.LogWarning("PLC durumu: {State} ({Detail})", state, detail);
+            }
+
+            // Hatayı ekranlara gönderir ve aynı türden hatayı dakikada en fazla bir kez log dosyasına yazar.
+            private async Task ReportErrorAsync(string key, string message, Exception? exception, CancellationToken token)
+            {
+                DateTime now = DateTime.Now;
+                bool shouldLog = !_lastErrorLog.TryGetValue(key, out var last) || (now - last).TotalSeconds >= ErrorLogSeconds;
+
+                if (shouldLog)
+                {
+                    _lastErrorLog[key] = now;
+                    _logger.LogError(exception, "{Message}", message);
+                }
+
+                try
+                {
+                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", message, token);
+                }
+                catch
+                {
+                    // Hata bildirimi gönderilemese de döngü çalışmaya devam etmelidir.
                 }
             }
 
@@ -178,19 +235,6 @@
             private Task PublishAsync(ScadaLiveDto dto, CancellationToken token)
             {
                 return _scadaHubContext.Clients.All.SendAsync("ReceiveScadaData", dto, token);
-            }
-
-            // Hata mesajını ScadaHub üzerinden ekranlara gönderir; gönderim hatası yok sayılır.
-            private async Task PublishErrorAsync(string message, CancellationToken token)
-            {
-                try
-                {
-                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", message, token);
-                }
-                catch
-                {
-                    // Hata bildirimi gönderilemese de döngü çalışmaya devam etmelidir.
-                }
             }
 
             // PLC yaşam sinyalinin değişimini izler; 3 sn değişmediyse verinin eski olduğunu döner.
@@ -223,7 +267,7 @@
                 var result = await _alarmService.ProcessAlarmWordsAsync(status.AlarmActive, status.AlarmUnack);
                 if (!result.IsSuccess)
                 {
-                    await PublishErrorAsync(result.Message, token);
+                    await ReportErrorAsync("alarm", result.Message, null, token);
                     return;
                 }
 
@@ -239,13 +283,17 @@
                 }
             }
 
-            // Sekans durumunu şarj servisine bildirir; program bittiğinde ya da durduğunda şarj kaydı kapanır.
+            // Sekans durumunu şarj servisine bildirir; şarj kapandıysa bunu log dosyasına yazar.
             private async Task TrackBatchAsync(ScadaStatus status, CancellationToken token)
             {
                 var result = await _batchService.TrackSequenceAsync(status.SeqState);
                 if (!result.IsSuccess)
                 {
-                    await PublishErrorAsync(result.Message, token);
+                    await ReportErrorAsync("batch", result.Message, null, token);
+                }
+                else if (!string.IsNullOrEmpty(result.Message))
+                {
+                    _logger.LogInformation("{Message}", result.Message);
                 }
             }
 
@@ -285,7 +333,7 @@
                 }
                 catch (Exception ex)
                 {
-                    await PublishErrorAsync($"Historian kaydı yazılamadı: {ex.Message}", token);
+                    await ReportErrorAsync("historian", $"Historian kaydı yazılamadı: {ex.Message}", ex, token);
                 }
             }
         }
