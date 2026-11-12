@@ -37,7 +37,10 @@
             private readonly Stopwatch _sinceLog = new Stopwatch();
             private short _lastPlcHeartbeat;
             private bool _hasPlcHeartbeat;
-            private bool _alarmsPublished;
+
+            // PLC döngüsünün okuduğu son geçerli durum; veritabanı döngüsü bunu işler. Geçerli veri yoksa null.
+            private volatile ScadaStatus? _latestStatus;
+            private volatile bool _alarmsPublished;
 
             // Servis bağımlılıklarını alır ve PLC IP adresini ayarlardan okur.
             public PlcPollingBackgroundService(
@@ -58,8 +61,16 @@
                 _plcIp = configuration["Plc:IpAddress"] ?? "192.168.0.1";
             }
 
-            // Ana döngü: DB201'i okur, yayınlar, yaşam sinyali yazar; alarmları, şarj kaydını ve historian'ı işler.
+            // PLC döngüsünü ve veritabanı döngüsünü birbirinden bağımsız olarak çalıştırır.
             protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+            {
+                await Task.WhenAll(
+                    RunPlcLoopAsync(stoppingToken),
+                    RunDatabaseLoopAsync(stoppingToken));
+            }
+
+            // PLC döngüsü: DB201'i okur, ekrana yayınlar ve yaşam sinyalini yazar; veritabanına hiç dokunmaz.
+            private async Task RunPlcLoopAsync(CancellationToken stoppingToken)
             {
                 await _plcService.ConnectPlcAsync(_plcIp);
 
@@ -74,6 +85,7 @@
                         if (statusResult.Data == null)
                         {
                             // Okuma yapılamadı: bağlantı yok sayılır, sürücü bir sonraki okumada yeniden bağlanmayı dener.
+                            _latestStatus = null;
                             _hasPlcHeartbeat = false;
                             _alarmsPublished = false;
                             delayMs = ReconnectMs;
@@ -99,18 +111,11 @@
                                 Status = status
                             }, stoppingToken);
 
-                            // Sürüm uyuşmuyorsa adresler güvenilir değildir: yazılmaz, alarm, şarj ve historian işlenmez.
-                            if (versionOk)
-                            {
-                                await SendHeartbeatIfDueAsync();
+                            // Sürüm uyuşmuyorsa ya da veri eskiyse veritabanı döngüsüne veri verilmez.
+                            _latestStatus = (versionOk && !isStale) ? status : null;
 
-                                if (!isStale)
-                                {
-                                    await ProcessAlarmsAsync(status, stoppingToken);
-                                    await TrackBatchAsync(status, stoppingToken);
-                                    await LogHistoryIfDueAsync(status, stoppingToken);
-                                }
-                            }
+                            if (versionOk)
+                                await SendHeartbeatIfDueAsync();
                         }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -119,10 +124,53 @@
                     }
                     catch (Exception ex)
                     {
-                        await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", ex.Message, stoppingToken);
+                        await PublishErrorAsync(ex.Message, stoppingToken);
                     }
 
-                    await Task.Delay(delayMs, stoppingToken);
+                    await DelayAsync(delayMs, stoppingToken);
+                }
+            }
+
+            // Veritabanı döngüsü: son geçerli durumdan alarmları, şarj kaydını ve ölçümleri işler.
+            private async Task RunDatabaseLoopAsync(CancellationToken stoppingToken)
+            {
+                while (!stoppingToken.IsCancellationRequested)
+                {
+                    var status = _latestStatus;
+
+                    if (status != null)
+                    {
+                        try
+                        {
+                            await ProcessAlarmsAsync(status, stoppingToken);
+                            await TrackBatchAsync(status, stoppingToken);
+                            await LogHistoryIfDueAsync(status, stoppingToken);
+                        }
+                        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                        {
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            // Veritabanı hatası yalnızca bu döngüyü etkiler; canlı veri akmaya devam eder.
+                            await PublishErrorAsync($"Veritabanı kaydı yapılamadı: {ex.Message}", stoppingToken);
+                        }
+                    }
+
+                    await DelayAsync(PollMs, stoppingToken);
+                }
+            }
+
+            // Verilen süre kadar bekler; uygulama kapanırken beklemeyi sessizce keser.
+            private static async Task DelayAsync(int delayMs, CancellationToken token)
+            {
+                try
+                {
+                    await Task.Delay(delayMs, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Uygulama kapanıyor.
                 }
             }
 
@@ -130,6 +178,19 @@
             private Task PublishAsync(ScadaLiveDto dto, CancellationToken token)
             {
                 return _scadaHubContext.Clients.All.SendAsync("ReceiveScadaData", dto, token);
+            }
+
+            // Hata mesajını ScadaHub üzerinden ekranlara gönderir; gönderim hatası yok sayılır.
+            private async Task PublishErrorAsync(string message, CancellationToken token)
+            {
+                try
+                {
+                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", message, token);
+                }
+                catch
+                {
+                    // Hata bildirimi gönderilemese de döngü çalışmaya devam etmelidir.
+                }
             }
 
             // PLC yaşam sinyalinin değişimini izler; 3 sn değişmediyse verinin eski olduğunu döner.
@@ -162,7 +223,7 @@
                 var result = await _alarmService.ProcessAlarmWordsAsync(status.AlarmActive, status.AlarmUnack);
                 if (!result.IsSuccess)
                 {
-                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", result.Message, token);
+                    await PublishErrorAsync(result.Message, token);
                     return;
                 }
 
@@ -184,7 +245,7 @@
                 var result = await _batchService.TrackSequenceAsync(status.SeqState);
                 if (!result.IsSuccess)
                 {
-                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", result.Message, token);
+                    await PublishErrorAsync(result.Message, token);
                 }
             }
 
@@ -224,8 +285,7 @@
                 }
                 catch (Exception ex)
                 {
-                    // Veritabanı hatası canlı veriyi durdurmasın diye yalnızca bildirilir.
-                    await _scadaHubContext.Clients.All.SendAsync("ReceiveScadaError", $"Historian kaydı yazılamadı: {ex.Message}", token);
+                    await PublishErrorAsync($"Historian kaydı yazılamadı: {ex.Message}", token);
                 }
             }
         }

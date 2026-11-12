@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
+using WebAPI.Services;
 
 namespace WebAPI
 {
@@ -42,13 +43,17 @@ namespace WebAPI
             }
         }
 
-        // Host'u Autofac ile kurar ve gizli değerleri tutan appsettings.Local.json dosyasını da yükler.
+        // Host'u Autofac ile kurar, gizli ayar dosyasını yükler ve günlük bakım servisini kaydeder.
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
             .UseServiceProviderFactory(new AutofacServiceProviderFactory())
             .ConfigureAppConfiguration((context, config) =>
             {
                 config.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+            })
+            .ConfigureServices(services =>
+            {
+                services.AddHostedService<MaintenanceBackgroundService>();
             })
             .ConfigureContainer<ContainerBuilder>(builder =>
             {

@@ -43,11 +43,12 @@ namespace Business.ValidationRules
                 }
                 else if (step.StepType == Cooling)
                 {
-                    // Soğutma adımı bitiş sıcaklığı, azot, amonyak ve fan hızını kullanır.
+                    // Soğutma adımı yalnızca bitiş sıcaklığı, azot ve fan hızını kullanır; amonyak verilmez.
                     step.Vac_SetPoint = 0;
                     step.Vac_Timeout = 0;
                     step.StepTime = 0;
                     step.GSoak = 0;
+                    step.NH3_Flow = 0;
                     step.CO2_Perc = 0;
                     step.Su_On = 0;
                     step.H2_Auto = 0;
