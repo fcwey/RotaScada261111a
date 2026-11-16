@@ -4,9 +4,11 @@ using Xunit;
 
 namespace Tests
 {
-    // DB201 durum bloğunun kılavuzdaki adreslerden çözüldüğünü doğrulayan testler
+    // DB201 durum bloğunun (336 bayt) kılavuzdaki adreslerden çözüldüğünü doğrulayan testler
     public class ScadaStatusTests
     {
+        private const int Size = 336;
+
         // Verilen adrese Int değeri yazar.
         private static void PutInt(byte[] buffer, int address, short value)
         {
@@ -25,13 +27,17 @@ namespace Tests
             BinaryPrimitives.WriteSingleBigEndian(buffer.AsSpan(address, 4), value);
         }
 
-        // Her alanına kendi adresinden türetilmiş değer yazılmış 248 baytlık örnek blok üretir.
+        // Her alanına kendi adresinden türetilmiş değer yazılmış 336 baytlık örnek blok üretir.
         private static byte[] BuildBuffer()
         {
-            var buffer = new byte[248];
+            var buffer = new byte[Size];
 
             // Int alanlar: adres + 1000
-            foreach (int address in new[] { 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 44, 196 })
+            foreach (int address in new[]
+            {
+                0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 44, 196,
+                252, 254, 260, 262, 280, 282, 284, 286, 324, 326, 332, 334
+            })
                 PutInt(buffer, address, (short)(address + 1000));
 
             // Int diziler: TcStatus, DeviceStatus, AlarmActive, AlarmUnack
@@ -39,13 +45,17 @@ namespace Tests
                 PutInt(buffer, address, (short)(address + 1000));
 
             // DInt alanlar: adres + 100000
-            PutDInt(buffer, 36, 100036);
-            PutDInt(buffer, 40, 100040);
+            foreach (int address in new[] { 36, 40, 248, 264 })
+                PutDInt(buffer, address, address + 100000);
 
             // Real alanlar: adres + 0,5
             for (int address = 48; address < 140; address += 4)
                 PutReal(buffer, address, address + 0.5f);
             for (int address = 200; address < 248; address += 4)
+                PutReal(buffer, address, address + 0.5f);
+            for (int address = 288; address <= 320; address += 4)
+                PutReal(buffer, address, address + 0.5f);
+            foreach (int address in new[] { 256, 268, 272, 276, 328 })
                 PutReal(buffer, address, address + 0.5f);
 
             return buffer;
@@ -151,18 +161,64 @@ namespace Tests
             Assert.Equal(244.5f, status.DpuUstLoad);
         }
 
-        // 248 bayttan kısa veride hata fırlatıldığını doğrular.
+        // Şarj, PID ve arıza alanlarının (248..287) doğru adreslerden okunduğunu doğrular.
+        [Fact]
+        public void Parse_SarjVePidAlanlariDogruAdresten()
+        {
+            var status = ScadaStatus.Parse(BuildBuffer());
+
+            Assert.Equal(100248, status.BatchId);
+            Assert.Equal(1252, status.EndReason);
+            Assert.Equal(1254, status.EndCount);
+            Assert.Equal(256.5f, status.BatchEnergyKwh);
+            Assert.Equal(1260, status.PidState);
+            Assert.Equal(1262, status.TuneStatus);
+            Assert.Equal(100264, status.PidError);
+            Assert.Equal(268.5f, status.PidGain);
+            Assert.Equal(272.5f, status.PidTi);
+            Assert.Equal(276.5f, status.PidTd);
+            Assert.Equal(1280, status.InterlockBits);
+            Assert.Equal(1282, status.FaultBits);
+            Assert.Equal(1284, status.DpuAltStatus);
+            Assert.Equal(1286, status.DpuUstStatus);
+        }
+
+        // Sayaç ve kaçak testi alanlarının (288..335) doğru adreslerden okunduğunu doğrular.
+        [Fact]
+        public void Parse_SayacVeKacakAlanlariDogruAdresten()
+        {
+            var status = ScadaStatus.Parse(BuildBuffer());
+
+            Assert.Equal(288.5f, status.CO2Total);
+            Assert.Equal(292.5f, status.WaterTotal);
+            Assert.Equal(296.5f, status.FillN2Total);
+            Assert.Equal(300.5f, status.CircHours);
+            Assert.Equal(304.5f, status.CoolFanHours);
+            Assert.Equal(308.5f, status.VacPumpHours);
+            Assert.Equal(312.5f, status.HydPumpHours);
+            Assert.Equal(316.5f, status.HeatHours);
+            Assert.Equal(320.5f, status.EmgN2Total);
+
+            Assert.Equal(1324, status.LeakState);
+            Assert.Equal(1326, status.LeakResult);
+            Assert.Equal(328.5f, status.LeakRise);
+            Assert.Equal(1332, status.LeakRemainSec);
+            Assert.Equal(1334, status.LeakCount);
+        }
+
+        // 336 bayttan kısa veride (eski 248 baytlık blok dahil) hata fırlatıldığını doğrular.
         [Fact]
         public void Parse_KisaVerideHataFirlatir()
         {
-            Assert.Throws<ArgumentException>(() => ScadaStatus.Parse(new byte[247]));
+            Assert.Throws<ArgumentException>(() => ScadaStatus.Parse(new byte[335]));
+            Assert.Throws<ArgumentException>(() => ScadaStatus.Parse(new byte[248]));
         }
 
-        // Kılavuzdaki örneği doğrular: alarm 22 → kelime 1, bit 5 (adres 166).
+        // Alarm 22'nin kelime 1, bit 5'e (adres 166) denk geldiğini doğrular.
         [Fact]
         public void IsAlarmActive_Alarm22Kelime1Bit5()
         {
-            var buffer = new byte[248];
+            var buffer = new byte[Size];
             PutInt(buffer, 166, 1 << 5);
 
             var status = ScadaStatus.Parse(buffer);
@@ -172,11 +228,37 @@ namespace Tests
             Assert.False(status.IsAlarmActive(23));
         }
 
-        // Kelime sınırlarını doğrular: alarm 16 → kelime 0 bit 15, alarm 17 → kelime 1 bit 0.
+        // Kılavuzdaki örneği doğrular: alarm 35 → kelime 2 (adres 168), bit 2.
+        [Fact]
+        public void IsAlarmActive_Alarm35Kelime2Bit2()
+        {
+            var buffer = new byte[Size];
+            PutInt(buffer, 168, 4);
+
+            var status = ScadaStatus.Parse(buffer);
+
+            Assert.True(status.IsAlarmActive(35));
+            Assert.False(status.IsAlarmActive(34));
+        }
+
+        // Yeni alarmların dördüncü kelimeye denk geldiğini doğrular: alarm 59 → adres 170, bit 10.
+        [Fact]
+        public void IsAlarmActive_Alarm59Kelime3Bit10()
+        {
+            var buffer = new byte[Size];
+            PutInt(buffer, 170, 1 << 10);
+
+            var status = ScadaStatus.Parse(buffer);
+
+            Assert.True(status.IsAlarmActive(59));
+            Assert.False(status.IsAlarmActive(58));
+        }
+
+        // Kelime sınırlarını doğrular: alarm 16 → kelime 0 bit 15 (negatif okunan değer), alarm 17 → kelime 1 bit 0.
         [Fact]
         public void IsAlarmActive_KelimeSinirlari()
         {
-            var buffer = new byte[248];
+            var buffer = new byte[Size];
             PutInt(buffer, 164, unchecked((short)0x8000));
             PutInt(buffer, 166, 1);
 
@@ -192,7 +274,7 @@ namespace Tests
         [Fact]
         public void IsAlarmUnack_Adres180denOkur()
         {
-            var buffer = new byte[248];
+            var buffer = new byte[Size];
             PutInt(buffer, 180, 1);
 
             var status = ScadaStatus.Parse(buffer);
@@ -205,7 +287,7 @@ namespace Tests
         [Fact]
         public void HasPermit_BitleriDogruOkur()
         {
-            var buffer = new byte[248];
+            var buffer = new byte[Size];
             PutInt(buffer, 44, 0b01101);   // bit 0, 2 ve 3 dolu
 
             var status = ScadaStatus.Parse(buffer);
@@ -217,17 +299,64 @@ namespace Tests
             Assert.False(status.HasPermit(4));
         }
 
-        // Cihaz bitlerinin doğru kelimeden okunduğunu doğrular (DeviceStatus[1] bit 9 = otomatik mod).
+        // Cihaz bitlerinin doğru kelimeden okunduğunu doğrular (DeviceStatus[1] bit 10 = kısıtlı manuel, bit 13 = Kn yaklaşık).
         [Fact]
         public void GetDeviceBit_DogruKelimedenOkur()
         {
-            var buffer = new byte[248];
-            PutInt(buffer, 158, 1 << 9);
+            var buffer = new byte[Size];
+            PutInt(buffer, 158, (1 << 10) | (1 << 13));
 
             var status = ScadaStatus.Parse(buffer);
 
-            Assert.True(status.GetDeviceBit(1, 9));
-            Assert.False(status.GetDeviceBit(0, 9));
+            Assert.True(status.GetDeviceBit(1, 10));
+            Assert.True(status.GetDeviceBit(1, 13));
+            Assert.False(status.GetDeviceBit(1, 9));
+            Assert.False(status.GetDeviceBit(0, 10));
+        }
+
+        // Manuel basınç modunun bit olarak değil, DeviceStatus[2]'deki değer olarak okunduğunu doğrular.
+        [Fact]
+        public void ManuelBasincModu_DegerOlarakOkunur()
+        {
+            var buffer = new byte[Size];
+            PutInt(buffer, 160, 2);
+
+            Assert.Equal(2, ScadaStatus.Parse(buffer).GetManualPressureMode());
+        }
+
+        // Yalnızca durumu 0 olan termokuplun geçerli sayıldığını doğrular (1 kopuk, 3 kanal kapalı).
+        [Fact]
+        public void IsTcValid_YalnizcaSaglamKanal()
+        {
+            var buffer = new byte[Size];
+            PutInt(buffer, 140 + 2 * 3, 1);   // Kanal 3 kopuk
+            PutInt(buffer, 140 + 2 * 6, 3);   // Kanal 6 kapalı
+
+            var status = ScadaStatus.Parse(buffer);
+
+            Assert.True(status.IsTcValid(2));
+            Assert.False(status.IsTcValid(3));
+            Assert.False(status.IsTcValid(6));
+            Assert.False(status.IsTcValid(8));   // Olmayan kanal
+        }
+
+        // Kilitleme, arıza ve haberleşme bitlerinin kendi adreslerinden okunduğunu doğrular.
+        [Fact]
+        public void KilitlemeArizaVeHaberlesmeBitleri()
+        {
+            var buffer = new byte[Size];
+            PutInt(buffer, 280, 1 << 1);    // Isıtma isteniyor ama izin yok
+            PutInt(buffer, 282, 1 << 8);    // Giriş/çıkış modülü arızası
+            PutInt(buffer, 196, 1 << 3);    // Sürücü cevap veriyor
+
+            var status = ScadaStatus.Parse(buffer);
+
+            Assert.True(status.HasInterlock(1));
+            Assert.False(status.HasInterlock(0));
+            Assert.True(status.HasFault(8));
+            Assert.False(status.HasFault(1));
+            Assert.True(status.IsCommOk(3));
+            Assert.False(status.IsCommOk(0));
         }
     }
 }

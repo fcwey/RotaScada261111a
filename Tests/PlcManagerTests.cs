@@ -14,25 +14,30 @@ namespace Tests
         private readonly Dictionary<int, byte[]> _dbs = new()
         {
             { 200, new byte[20] },
-            { 201, new byte[248] },
+            { 201, new byte[336] },
             { 202, new byte[618] },
             { 203, new byte[618] },
-            { 204, new byte[100] }
+            { 204, new byte[112] },
+            { 205, new byte[1212] }
         };
 
         // PLC'nin komuta vereceği sonuç; null ise PLC hiç cevap vermez
         public short? AckResult { get; set; } = 1;
+
+        // PLC'nin komut cevabında vereceği detay (örneğin 901 uyarısı)
+        public short AckDetail { get; set; } = 0;
 
         // Yapılan toplam yazma sayısı
         public int WriteCount { get; private set; }
 
         public bool IsConnected => true;
 
-        // Şema sürümünü DB201 ve DB204'e 3 olarak yazar.
+        // Şema sürümünü DB201 ve DB204'e 6, DB205'e 1 olarak yazar.
         public FakeS7Driver()
         {
-            SetInt(201, 2, 3);
-            SetInt(204, 0, 3);
+            SetInt(201, 2, 6);
+            SetInt(204, 0, 6);
+            SetInt(205, 0, 1);
         }
 
         // Her zaman bağlanmış sayar.
@@ -64,6 +69,7 @@ namespace Tests
             {
                 SetInt(201, 4, GetInt(200, 0));     // AckCmdId = CmdId
                 SetInt(201, 6, AckResult.Value);    // AckResult
+                SetInt(201, 8, AckDetail);          // AckDetail
             }
 
             return Task.CompletedTask;
@@ -81,7 +87,6 @@ namespace Tests
             BinaryPrimitives.WriteInt16BigEndian(_dbs[db].AsSpan(address, 2), value);
         }
     }
-
     // Komut el sıkışması, sürüm kontrolü ve yaşam sinyali testleri
     public class PlcManagerTests
     {

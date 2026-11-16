@@ -12,6 +12,8 @@ namespace Business.Concrete
 {
     public class SystemSettingManager : ISystemSettingService
     {
+        private const int ReadBackDelayMs = 150;   // PLC'nin değeri sınırlaması için beklenen süre (birkaç çevrim)
+
         private readonly IS7DriverDal _s7DriverDal;
         private readonly IPlcService _plcService;
 
@@ -60,7 +62,7 @@ namespace Business.Concrete
             }
         }
 
-        // Parametreyi katalog ve aralık kontrolünden geçirip DB204'e yazar, geri okuyup doğrular.
+        // Parametreyi katalog ve aralık kontrolünden geçirip DB204'e yazar; geri okuyup PLC'de geçerli olan değeri bildirir.
         public async Task<IDataResult<int>> UpdateParameterAsync(int address, int value)
         {
             var definition = ParamCatalog.Find(address);
@@ -80,18 +82,30 @@ namespace Business.Concrete
                 if (!layout.IsSuccess)
                     return new ErrorDataResult<int>(layout.Message);
 
+                // Bazı parametreler yalnızca program çalışmıyorken (SeqState 0) değiştirilebilir.
+                if (definition.IdleOnly)
+                {
+                    short seqState = S7Bytes.GetInt(
+                        await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbStatus, ScadaLayout.StatusSeqStateOffset, 2), 0);
+
+                    if (seqState != 0)
+                        return new ErrorDataResult<int>($"'{definition.Name}' yalnızca program çalışmıyorken değiştirilebilir.");
+                }
+
                 int oldValue = S7Bytes.GetInt(await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbParam, address, 2), 0);
 
                 var data = new byte[2];
                 S7Bytes.SetInt(data, 0, (short)value);
                 await _s7DriverDal.WriteBytesAsync(ScadaLayout.DbParam, address, data);
 
-                // Yazılan değer geri okunup doğrulanır.
+                // PLC güvenlik parametrelerini her çevrim kendi sınırlarına çeker; geçerli değer geri okunur.
+                await Task.Delay(ReadBackDelayMs);
                 int readBack = S7Bytes.GetInt(await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbParam, address, 2), 0);
+
                 if (readBack != value)
                 {
-                    return new ErrorDataResult<int>(oldValue,
-                        $"'{definition.Name}' yazıldı ama geri okunan değer farklı (yazılan: {value}, okunan: {readBack}).");
+                    return new SuccessDataResult<int>(oldValue,
+                        $"'{definition.Name}' için {value} yazıldı ama PLC değeri {readBack} {definition.Unit} olarak sınırladı (önceki: {oldValue}).");
                 }
 
                 return new SuccessDataResult<int>(oldValue,

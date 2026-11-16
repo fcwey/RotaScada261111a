@@ -1,9 +1,9 @@
 ﻿namespace Entities.Structures
 {
-    // PLC alarm listesi (kılavuz bölüm 5.4): numara, varsayılan sınıf ve operatöre gösterilecek metin
+    // PLC alarm listesi (kılavuz bölüm 10): numara, başlangıç sınıfı ve operatöre gösterilecek metin
     public static class AlarmCatalog
     {
-        public const int MaxAlarmNo = 64;   // DB201'de ayrılan alarm biti sayısı
+        public const int MaxAlarmNo = 64;   // DB201'de kullanılan alarm biti sayısı (1..59 tanımlı)
 
         // Sınıf: 0 uyarı, 1 duraklat, 2 güvenli durdur
         private static readonly Dictionary<int, (int Class, string Text)> Alarms = new()
@@ -54,10 +54,22 @@
             { 44, (0, "Üst DPU ile haberleşme yok") },
             { 45, (0, "Enerji analizörü ile haberleşme yok") },
             { 46, (0, "Sürücü ile haberleşme yok") },
-            { 47, (0, "RS485 portu ayarlanamadı") }
+            { 47, (0, "RS485 portu ayarlanamadı") },
+            { 48, (0, "Program uzun süredir operatör tarafından duraklatılmış") },
+            { 49, (0, "Giriş/çıkış modülü arızası") },
+            { 50, (0, "Atmosfer temizliği (yıkama) operatör tarafından elle onaylandı") },
+            { 51, (0, "Simülasyon modu aktif (girişler modelden geliyor, fiziksel çıkışlar kapalı)") },
+            { 52, (0, "Korumalı bekleme operatör tarafından sonlandırıldı") },
+            { 53, (0, "Kapak kilidi operatör tarafından aşıldı") },
+            { 54, (0, "Tahliye açık ama basınç boşalmıyor (tahliye vanası açmıyor ya da hat tıkalı olabilir)") },
+            { 55, (0, "Basınç üst emniyeti devreye girdi (basınç kontrol vanası ya da disko çek valf boşaltamıyor olabilir)") },
+            { 56, (0, "Vanalar kapalı ve gaz veriliyor ama basınç oluşmuyor (vana kapatmıyor ya da kaçak olabilir)") },
+            { 57, (0, "Acil azot açık ama basınç yükselmiyor (azot yok ya da vana açmıyor olabilir)") },
+            { 58, (0, "Dengeleme yapılırken alt ve üst cehennemlik sıcaklıkları ayrışıyor") },
+            { 59, (0, "Kaçak testi sonunda azot dolumu süresinde tamamlanamadı") }
         };
 
-        // Ayarlardan gelen, varsayılanı ezen sınıflar (alarm no -> sınıf)
+        // Ayarlardan gelen, başlangıç değerini ezen sınıflar (alarm no -> sınıf)
         private static Dictionary<int, int> _classOverrides = new();
 
         // Sahada değiştirilen alarm sınıflarını yükler; aralık dışı numara ve sınıflar yok sayılır.
@@ -86,7 +98,7 @@
                 : $"Tanımsız alarm ({alarmNo})";
         }
 
-        // Alarm numarasının sınıfını döner; ayarlarda ezilmişse onu, yoksa varsayılanı kullanır.
+        // Alarm numarasının sınıfını döner; ayarlarda ezilmişse onu, yoksa başlangıç değerini kullanır.
         public static int GetClass(int alarmNo)
         {
             if (_classOverrides.TryGetValue(alarmNo, out int overrideClass))
