@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace Business.Concrete
 {
-    // Ekrandaki düğmelerin etkin/pasif gösterimi ve mimik şema için PLC'nin izin ve cihaz bitlerini okur.
+    // Ekrandaki düğmelerin etkin/pasif gösterimi ve mimik şema için PLC'nin izin, cihaz, kilitleme ve arıza bitlerini okur.
     // İzinleri SCADA hesaplamaz; yalnızca PLC'nin DB201'de verdiği bitleri aktarır. Son karar her zaman PLC'dedir.
     public class InterlockManager : IInterlockService
     {
@@ -34,13 +34,15 @@ namespace Business.Concrete
                 case "START":
                     if (status.Mode != 2)
                         return new ErrorResult("İZİN YOK: Otomatik mod seçili değil.");
+                    if (status.LeakState != 0)
+                        return new ErrorResult("İZİN YOK: Kaçak testi sürüyor.");
                     if (!status.HasPermit(0))
-                        return new ErrorResult("İZİN YOK: Başlatma izni yok (kapak, eşanjörde su, güç).");
+                        return new ErrorResult("İZİN YOK: Başlatma izni yok (kapak kapalı ve kilitli değil, acil stop ya da eşanjörde su var).");
                     break;
 
                 case "OPEN_LID":
                     if (!status.HasPermit(1))
-                        return new ErrorResult("İZİN YOK: Kapak açılamaz (sıcaklık yüksek ya da azot yıkaması tamamlanmadı).");
+                        return new ErrorResult("İZİN YOK: Kapak açılamaz (sıcaklık ya da basınç yüksek, ya da atmosfer temiz değil).");
                     break;
 
                 case "NH3":
@@ -65,7 +67,7 @@ namespace Business.Concrete
             return new SuccessResult("PLC izni var.");
         }
 
-        // DB201'deki izin ve cihaz bitlerini mimik ekran için tek pakette döner.
+        // DB201'deki izin, cihaz, kilitleme ve arıza bitlerini mimik ekran için tek pakette döner.
         public async Task<IDataResult<MimicStateDto>> GetMimicStateAsync()
         {
             var statusResult = await _plcService.ReadStatusAsync();
@@ -85,7 +87,8 @@ namespace Business.Concrete
             {
                 IsConnected = true,
                 HasActiveAlarm = hasActiveAlarm,
-                SafetyStatusText = GetSafetyStatusText(status.SeqState, hasActiveAlarm),
+                SeqState = status.SeqState,
+                SafetyStatusText = GetSafetyStatusText(status, hasActiveAlarm),
 
                 CanStartProgram = status.HasPermit(0),
                 CanOpenLid = status.HasPermit(1),
@@ -119,17 +122,48 @@ namespace Business.Concrete
                 HydraulicMotor = status.GetDeviceBit(1, 6),
                 AmmoniaAtmosphereInside = status.GetDeviceBit(1, 7),
                 ManualMode = status.GetDeviceBit(1, 8),
-                AutoMode = status.GetDeviceBit(1, 9)
+                AutoMode = status.GetDeviceBit(1, 9),
+                RestrictedManual = status.GetDeviceBit(1, 10),
+                SimulationMode = status.GetDeviceBit(1, 11),
+                LidOverrideActive = status.GetDeviceBit(1, 12),
+                KnApproximate = status.GetDeviceBit(1, 13),
+
+                ManualPressureMode = status.GetManualPressureMode(),
+
+                VacuumBlocked = status.HasInterlock(0),
+                HeatingBlocked = status.HasInterlock(1),
+                CoolingFanBlocked = status.HasInterlock(2),
+                CirculationBlocked = status.HasInterlock(3),
+                LidBlocked = status.HasInterlock(4),
+
+                VacuumMotorFault = status.HasFault(0),
+                CirculationFault = status.HasFault(1),
+                CoolingFanFault = status.HasFault(2),
+                HydraulicFault = status.HasFault(3),
+                N2MfcFault = status.HasFault(4),
+                NH3MfcFault = status.HasFault(5),
+                ExchangerValveFault = status.HasFault(6),
+                HeatingSensorFault = status.HasFault(7),
+                IoModuleFault = status.HasFault(8)
             };
 
             return new SuccessDataResult<MimicStateDto>(mimicDto);
         }
 
-        // Sekans durumu ve alarm bilgisinden operatöre gösterilecek güvenlik metnini üretir.
-        private static string GetSafetyStatusText(short seqState, bool hasActiveAlarm)
+        // Sekans durumu, mod bitleri ve alarm bilgisinden operatöre gösterilecek güvenlik metnini üretir.
+        private static string GetSafetyStatusText(ScadaStatus status, bool hasActiveAlarm)
         {
-            if (seqState == 80)
+            if (status.GetDeviceBit(1, 11))
+                return "SİMÜLASYON MODU (fiziksel çıkışlar kapalı)";
+
+            if (status.SeqState == 80)
                 return "GÜVENLİ DURDURMA";
+
+            if (status.GetDeviceBit(1, 12))
+                return "KAPAK KİLİDİ AŞILMIŞ";
+
+            if (status.SeqState == 45)
+                return "KORUMALI BEKLEME";
 
             return hasActiveAlarm ? "AKTİF ALARM VAR" : "SİSTEM GÜVENLİ";
         }

@@ -33,6 +33,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
         public DbSet<BatchRecipeRevision> BatchRecipeRevisions { get; set; }
         public DbSet<BatchStepSummary> BatchStepSummaries { get; set; }
         public DbSet<LeakTestRecord> LeakTestRecords { get; set; }
+        public DbSet<ParamBackup> ParamBackups { get; set; }
         public DbSet<ProcessDataLog> ProcessDataLogs { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
 
@@ -102,6 +103,12 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
                 .Property(l => l.ResultText)
                 .HasMaxLength(100)
                 .IsRequired();
+
+            // 8. Parametre yedekleri
+            modelBuilder.Entity<ParamBackup>()
+                .Property(p => p.Note)
+                .HasMaxLength(200)
+                .IsRequired();
         }
 
         // Kaydetmeden önce değişiklikleri toplar, kaydettikten sonra audit log yazar.
@@ -121,10 +128,10 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
 
             foreach (var entry in ChangeTracker.Entries())
             {
-                // AuditLog'un kendisi, PLC'den gelen kayıtlar (ölçüm, plan geçmişi, adım özeti, kaçak testi) ve değişmeyen veriler loglanmaz.
+                // AuditLog'un kendisi, PLC'den gelen kayıtlar (ölçüm, plan geçmişi, adım özeti, kaçak testi, parametre yedeği) ve değişmeyen veriler loglanmaz.
                 if (entry.Entity is AuditLog || entry.Entity is ProcessDataLog ||
                     entry.Entity is BatchRecipeRevision || entry.Entity is BatchStepSummary ||
-                    entry.Entity is LeakTestRecord ||
+                    entry.Entity is LeakTestRecord || entry.Entity is ParamBackup ||
                     entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
                     continue;
 
