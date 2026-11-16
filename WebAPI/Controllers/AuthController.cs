@@ -1,9 +1,13 @@
 ﻿using Business.Abstract;
+using Core.Extensions;
+using Core.Utilities.Results;
 using Entities.Dtos;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Linq;
 using System.Net;
 
 namespace WebAPI.Controllers
@@ -63,6 +67,22 @@ namespace WebAPI.Controllers
                 return Ok(result.Data);
             }
             return BadRequest(result.Message);
+        }
+
+        // Giriş yapmış kullanıcının adını ve veritabanındaki güncel rollerini döner; ekran token'ı bununla doğrular.
+        [HttpGet("me")]
+        [Authorize]
+        public ActionResult Me()
+        {
+            var user = new CurrentUserDto
+            {
+                Id = User.GetUserId(),
+                Name = User.GetUserName(),
+                Email = User.GetUserEmail(),
+                Roles = User.ClaimRoles().Distinct().ToList()
+            };
+
+            return Ok(new SuccessDataResult<CurrentUserDto>(user));
         }
 
         // İsteği yapan bilgisayarın adresini döner; aynı bilgisayarın farklı yazımlarını (::1, 127.0.0.1) tek adrese indirir.
