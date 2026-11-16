@@ -1,0 +1,104 @@
+﻿<Window x:Class="DesktopUI.Views.ShellWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:DesktopUI.ViewModels"
+        Title="RotaScada"
+        Width="1600" Height="900" MinWidth="1280" MinHeight="720"
+        WindowState="Maximized"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource PageBrush}">
+
+    <Window.Resources>
+        <!-- Henüz yapılmamış sayfalar -->
+        <DataTemplate DataType="{x:Type vm:PlaceholderPageViewModel}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="{Binding Title}" FontSize="30" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="Bu sayfa sonraki aşamada eklenecek." Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,8,0,0" />
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <DockPanel>
+
+        <!-- Üst durum şeridi -->
+        <Border DockPanel.Dock="Top" Background="{StaticResource BarBrush}" Height="56">
+            <DockPanel Margin="16,0">
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border CornerRadius="3" Padding="10,4" Margin="0,0,18,0" ToolTip="{Binding LinkDetail}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{StaticResource BadBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding LinkLevel}" Value="Ok">
+                                        <Setter Property="Background" Value="{StaticResource OkBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding LinkLevel}" Value="Warn">
+                                        <Setter Property="Background" Value="{StaticResource WarnBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding LinkText}" Foreground="White" FontWeight="SemiBold" />
+                    </Border>
+                    <TextBlock Text="{Binding UserName}" Style="{StaticResource BarText}" Margin="0,0,18,0" />
+                    <TextBlock Text="{Binding ClockText}" Style="{StaticResource BarText}" Margin="0,0,18,0" />
+                    <Button Content="Çıkış" Command="{Binding LogoutCommand}" Padding="12,4" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding FurnaceName}" Style="{StaticResource BarText}" FontWeight="SemiBold" Margin="0,0,24,0" />
+                    <TextBlock Text="{Binding SeqText}" Foreground="White" FontSize="20" FontWeight="Bold" Margin="0,0,24,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StepText}" Style="{StaticResource BarText}" Margin="0,0,24,0" />
+                    <TextBlock Text="{Binding BatchText}" Style="{StaticResource BarText}" Margin="0,0,24,0" />
+                    <TextBlock Text="{Binding ModeText}" Style="{StaticResource BarText}" FontWeight="SemiBold" />
+                </StackPanel>
+
+            </DockPanel>
+        </Border>
+
+        <!-- Alt alarm şeridi -->
+        <Border DockPanel.Dock="Bottom" Height="48">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasAlarm}" Value="True">
+                            <Setter Property="Background" Value="{StaticResource AlarmBackBrush}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <DockPanel Margin="16,0">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding CommandMessage}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <Button Content="Sustur" Command="{Binding MuteCommand}" Padding="14,5" Margin="0,0,8,0" />
+                    <Button Content="Alarm Reset" Command="{Binding AlarmResetCommand}" Padding="14,5" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,16,0">
+                        <Run Text="{Binding AlarmCount, Mode=OneWay}" />
+                        <Run Text="aktif alarm" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding AlarmText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Sol menü -->
+        <Border DockPanel.Dock="Left" Width="190" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+            <ListBox ItemsSource="{Binding MenuItems}" SelectedItem="{Binding SelectedMenu}"
+                     DisplayMemberPath="Title" BorderThickness="0" Background="Transparent" FontSize="16">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="18,12" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+            </ListBox>
+        </Border>
+
+        <!-- Seçili sayfa -->
+        <ContentControl Content="{Binding CurrentPage}" Margin="16" />
+
+    </DockPanel>
+</Window>
