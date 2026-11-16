@@ -22,6 +22,9 @@ namespace Business.Concrete
         // DB202'ye aynı anda tek reçete yazılmasını sağlar (yazma ve komut birlikte kilitlenir).
         private readonly SemaphoreSlim _plcRecipeLock = new SemaphoreSlim(1, 1);
 
+        // Aynı anda tek program başlatma işleminin yürümesini sağlar.
+        private readonly SemaphoreSlim _startLock = new SemaphoreSlim(1, 1);
+
         // Sürücü ve PLC servis bağımlılıklarını alır.
         public RecipeManager(IS7DriverDal s7DriverDal, IPlcService plcService)
         {
@@ -147,25 +150,51 @@ namespace Business.Concrete
             return await SendRecipeAsync(recipe, ScadaCommandCode.Validate);
         }
 
-        // Reçeteyi DB202'ye yazar, Start komutunu gönderir; kabul edilirse şarjı açıp reçetenin kopyasını saklar.
+        // Şarj numarası ayırır, reçeteyi DB202'ye yazıp Start komutunu bu numarayla gönderir; kabul edilirse şarjı açar.
         public async Task<IDataResult<ScadaCommandResult>> StartRecipeAsync(int recipeId, int userId)
         {
             var recipe = await LoadRecipeAsync(recipeId);
             if (recipe == null)
                 return new ErrorDataResult<ScadaCommandResult>("Başlatılacak reçete bulunamadı.");
 
-            var result = await SendRecipeAsync(recipe, ScadaCommandCode.Start);
-            if (!result.IsSuccess)
-                return result;
+            await _startLock.WaitAsync();
+            try
+            {
+                // Şarj numarası Start komutundan önce gerekir; veritabanına ulaşılamazsa program 0 numarayla yine başlatılır.
+                int? batchId = await ReserveBatchAsync(recipe, userId);
+                int plcBatchId = batchId ?? 0;
 
-            // Program PLC'de başladı; şarj kaydı bundan sonra açılır.
-            string? batchCode = await OpenBatchAsync(recipe, userId);
+                // Şarj numarası 32 bittir: Param1 düşük 16 bit, Param2 yüksek 16 bit.
+                short param1 = unchecked((short)(plcBatchId & 0xFFFF));
+                short param2 = unchecked((short)(plcBatchId >> 16));
 
-            string message = batchCode != null
-                ? $"'{recipe.RecipeName}' programı başladı. Şarj kodu: {batchCode}"
-                : $"'{recipe.RecipeName}' programı başladı ama şarj kaydı açılamadı. Veritabanını kontrol edin.";
+                var result = await SendRecipeAsync(recipe, ScadaCommandCode.Start, param1, param2);
+                if (!result.IsSuccess)
+                {
+                    if (batchId.HasValue)
+                        await ReleaseBatchAsync(batchId.Value);
 
-            return new SuccessDataResult<ScadaCommandResult>(result.Data, message);
+                    return result;
+                }
+
+                // Program PLC'de başladı; ayrılan şarj kaydı açılır.
+                string? batchCode = batchId.HasValue
+                    ? await ActivateBatchAsync(batchId.Value, recipe, userId)
+                    : null;
+
+                string message = batchCode != null
+                    ? $"'{recipe.RecipeName}' programı başladı. Şarj kodu: {batchCode}"
+                    : $"'{recipe.RecipeName}' programı başladı ama şarj kaydı açılamadı. Veritabanını kontrol edin.";
+
+                if (result.Data != null && result.Data.HasWarning)
+                    message += " UYARI: soğutma bitiş sıcaklığı kapak açma sınırından yüksek; program sonunda korumalı bekleme olacak.";
+
+                return new SuccessDataResult<ScadaCommandResult>(result.Data, message);
+            }
+            finally
+            {
+                _startLock.Release();
+            }
         }
 
         // PLC'de çalışan reçeteyi DB203'ten okuyup döner.
@@ -195,11 +224,14 @@ namespace Business.Concrete
                 ? "Değişiklik uygulandı ve şarj kaydına işlendi."
                 : "Değişiklik uygulandı ama şarj kaydına işlenemedi (açık şarj bulunamadı ya da veritabanına ulaşılamadı).";
 
+            if (result.Data != null && result.Data.HasWarning)
+                message += " UYARI: soğutma bitiş sıcaklığı kapak açma sınırından yüksek; program sonunda korumalı bekleme olacak.";
+
             return new SuccessDataResult<ScadaCommandResult>(result.Data, message);
         }
 
-        // Reçeteyi doğrular, DB202'ye yazar, geri okuyup karşılaştırır ve verilen komutu gönderir.
-        private async Task<IDataResult<ScadaCommandResult>> SendRecipeAsync(Recipe recipe, ScadaCommandCode command)
+        // Reçeteyi doğrular, DB202'ye yazar, geri okuyup karşılaştırır ve verilen komutu parametreleriyle gönderir.
+        private async Task<IDataResult<ScadaCommandResult>> SendRecipeAsync(Recipe recipe, ScadaCommandCode command, short param1 = 0, short param2 = 0)
         {
             await _plcRecipeLock.WaitAsync();
             try
@@ -222,7 +254,7 @@ namespace Business.Concrete
                 if (!readBack.SequenceEqual(data))
                     return new ErrorDataResult<ScadaCommandResult>("DB202'ye yazılan reçete geri okunanla uyuşmuyor. Komut gönderilmedi.");
 
-                return await _plcService.SendCommandAsync(command);
+                return await _plcService.SendCommandAsync(command, param1, param2);
             }
             catch (Exception ex)
             {
@@ -271,8 +303,39 @@ namespace Business.Concrete
             return recipe;
         }
 
-        // Kapanmamış eski şarjları kapatır, yeni şarjı açar ve reçetenin başlangıç kopyasını saklar; şarj kodunu döner.
-        private static async Task<string?> OpenBatchAsync(Recipe recipe, int userId)
+        // Start komutundan önce şarj kaydını "STARTING" durumunda ayırır ve numarasını döner; veritabanı hatasında null döner.
+        private static async Task<int?> ReserveBatchAsync(Recipe recipe, int userId)
+        {
+            try
+            {
+                await using var context = new NorthwindContext();
+                DateTime now = DateTime.Now;
+
+                // Daha önce yarım kalmış ayırmalar temizlenir.
+                await context.Batches.Where(b => b.Status == "STARTING").ExecuteDeleteAsync();
+
+                var batch = new Batch
+                {
+                    BatchCode = $"BATCH-{now:yyyyMMdd-HHmmss}",
+                    RecipeId = recipe.Id,
+                    OperatorUserId = userId,
+                    StartTime = now,
+                    Status = "STARTING",
+                    CompletionNote = "Start komutu gönderiliyor."
+                };
+
+                await context.Batches.AddAsync(batch);
+                await context.SaveChangesAsync();
+                return batch.Id;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // Start kabul edilince: kapanmamış eski şarjları kapatır, ayrılan şarjı açar ve reçetenin başlangıç kopyasını saklar; şarj kodunu döner.
+        private static async Task<string?> ActivateBatchAsync(int batchId, Recipe recipe, int userId)
         {
             try
             {
@@ -287,17 +350,13 @@ namespace Business.Concrete
                     stale.CompletionNote = "Bitişi kaydedilmemiş şarj; yeni program başlatılırken kapatıldı.";
                 }
 
-                var batch = new Batch
-                {
-                    BatchCode = $"BATCH-{now:yyyyMMdd-HHmmss}",
-                    RecipeId = recipe.Id,
-                    OperatorUserId = userId,
-                    StartTime = now,
-                    Status = "RUNNING",
-                    CompletionNote = "Program başlatıldı."
-                };
+                var batch = await context.Batches.FirstOrDefaultAsync(b => b.Id == batchId);
+                if (batch == null)
+                    return null;
 
-                await context.Batches.AddAsync(batch);
+                batch.Status = "RUNNING";
+                batch.StartTime = now;
+                batch.CompletionNote = "Program başlatıldı.";
                 await context.SaveChangesAsync();
 
                 // Reçetenin PLC'ye gönderilen hali şarja kopyalanır; reçete sonradan değişse de bu kayıt değişmez.
@@ -319,7 +378,21 @@ namespace Business.Concrete
             }
         }
 
-        // Çalışırken yapılan değişikliği açık şarjın reçete geçmişine ekler; eklendiyse true döner.
+        // Start reddedilince ayrılan şarj kaydını siler; silme hatası yok sayılır (bir sonraki Start'ta temizlenir).
+        private static async Task ReleaseBatchAsync(int batchId)
+        {
+            try
+            {
+                await using var context = new NorthwindContext();
+                await context.Batches.Where(b => b.Id == batchId && b.Status == "STARTING").ExecuteDeleteAsync();
+            }
+            catch
+            {
+                // Kayıt silinemese de komutun sonucu operatöre dönmelidir.
+            }
+        }
+
+        // Çalışırken yapılan değişikliği açık şarjın plan geçmişine ekler; eklendiyse true döner.
         private static async Task<bool> AddEditRevisionAsync(Recipe editedRecipe, int userId)
         {
             try

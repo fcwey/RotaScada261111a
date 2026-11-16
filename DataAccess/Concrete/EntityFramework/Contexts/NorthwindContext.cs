@@ -31,6 +31,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
         public DbSet<RecipeStep> RecipeSteps { get; set; } //  (20 Adımlı Reçete Detayları)
         public DbSet<Batch> Batches { get; set; }
         public DbSet<BatchRecipeRevision> BatchRecipeRevisions { get; set; }
+        public DbSet<BatchStepSummary> BatchStepSummaries { get; set; }
         public DbSet<ProcessDataLog> ProcessDataLogs { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
 
@@ -66,7 +67,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
                 .HasMaxLength(30)
                 .IsRequired();
 
-            // 4. Şarj durumu: indekslenebilmesi için uzunluk sınırı verilir (RUNNING, COMPLETED, ABORTED, UNKNOWN)
+            // 4. Şarj durumu: indekslenebilmesi için uzunluk sınırı verilir (STARTING, RUNNING, COMPLETED, ABORTED, UNKNOWN)
             modelBuilder.Entity<Batch>()
                 .Property(b => b.Status)
                 .HasMaxLength(20)
@@ -76,7 +77,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
                 .HasIndex(b => b.Status)
                 .HasDatabaseName("IX_Batch_Status");
 
-            // 5. Şarjın reçete kopyaları: şarj silinirse kopyaları da silinir
+            // 5. Şarjın plan geçmişi: şarj silinirse kayıtları da silinir
             modelBuilder.Entity<BatchRecipeRevision>()
                 .Property(r => r.Reason)
                 .HasMaxLength(20)
@@ -86,6 +87,13 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
                 .HasOne<Batch>()
                 .WithMany()
                 .HasForeignKey(r => r.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // 6. Şarjın adım özetleri: şarj silinirse özetleri de silinir
+            modelBuilder.Entity<BatchStepSummary>()
+                .HasOne<Batch>()
+                .WithMany()
+                .HasForeignKey(s => s.BatchId)
                 .OnDelete(DeleteBehavior.Cascade);
         }
 
@@ -106,8 +114,9 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
 
             foreach (var entry in ChangeTracker.Entries())
             {
-                // AuditLog'un kendisi, ölçüm kayıtları, reçete kopyaları ve değişmeyen veriler loglanmaz.
-                if (entry.Entity is AuditLog || entry.Entity is ProcessDataLog || entry.Entity is BatchRecipeRevision ||
+                // AuditLog'un kendisi, ölçüm kayıtları, plan geçmişi, adım özetleri ve değişmeyen veriler loglanmaz.
+                if (entry.Entity is AuditLog || entry.Entity is ProcessDataLog ||
+                    entry.Entity is BatchRecipeRevision || entry.Entity is BatchStepSummary ||
                     entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
                     continue;
 

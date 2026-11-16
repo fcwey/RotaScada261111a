@@ -1,5 +1,6 @@
 ﻿using Business.Abstract;
 using Core.Utilities.Results;
+using DataAccess.Abstract;
 using DataAccess.Concrete.EntityFramework.Contexts;
 using Entities.Concrete;
 using Entities.Dtos;
@@ -15,70 +16,70 @@ namespace Business.Concrete
     public class BatchManager : IBatchService
     {
         private const short SeqIdle = 0;          // Bekleme
-        private const short SeqFinished = 60;     // Program bitti
-        private const short SeqSafeStop = 80;     // Güvenli durdurma
-        private const int RetrySeconds = 30;      // Veritabanı hatasından sonra yeniden deneme aralığı
+        private const int RetrySeconds = 30;      // Hatadan sonra yeniden deneme aralığı
 
+        private readonly IS7DriverDal? _s7DriverDal;
         private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
 
         private bool _initialized;                // İlk durum işlendi mi
         private short _lastSeqState;              // Son işlenen sekans durumu
-        private bool _sawSafeStop;                // Bu programda güvenli durdurma görüldü mü
         private DateTime _retryAfter = DateTime.MinValue;
 
-        // Sekans durumu değiştiğinde açık şarjı uygun sonuçla kapatır; değişiklik yoksa veritabanına gitmez.
+        // PLC bağlantısı olmadan oluşturur; yalnızca veritabanı sorguları ve plan olayları kullanılabilir.
+        public BatchManager()
+        {
+        }
+
+        // PLC sürücüsüyle oluşturur; şarj bitişini ve adım özetlerini PLC'den okuyabilir.
+        public BatchManager(IS7DriverDal s7DriverDal)
+        {
+            _s7DriverDal = s7DriverDal;
+        }
+
+        // Sekans durumu değiştiğinde DB201'i taze okur; program bittiyse bitiş bilgisini kaydeder, fırın beklemeye döndüyse şarjı kapatır.
         public async Task<IResult> TrackSequenceAsync(short seqState)
         {
             await _lock.WaitAsync();
             try
             {
-                if (seqState == SeqSafeStop)
-                    _sawSafeStop = true;
-
                 bool isFirst = !_initialized;
                 if (!isFirst && seqState == _lastSeqState)
                     return new SuccessResult();
 
-                // Veritabanı hata verdiyse canlı veri döngüsü tıkanmasın diye bir süre beklenir.
+                // Hata alındıysa canlı veri döngüsü tıkanmasın diye bir süre beklenir.
                 if (DateTime.Now < _retryAfter)
                     return new SuccessResult();
 
-                string? status = null;
-                string? note = null;
+                if (_s7DriverDal == null)
+                    return new ErrorResult("Şarj takibi için PLC sürücüsü tanımlı değil.");
 
-                if (seqState == SeqFinished)
+                // Karar, tetikleyen değere değil o anda PLC'den okunan duruma göre verilir.
+                var status = ScadaStatus.Parse(
+                    await _s7DriverDal.ReadBytesAsync(ScadaLayout.DbStatus, 0, ScadaLayout.StatusSize));
+
+                var messages = new List<string>();
+
+                // 1. Program bittiyse (EndReason doldu) bitiş bilgisi ve adım özetleri kaydedilir; şarj açık kalır.
+                if (status.EndReason != 0)
                 {
-                    status = "COMPLETED";
-                    note = "Program tamamlandı.";
-                }
-                else if (seqState == SeqIdle)
-                {
-                    if (isFirst)
-                    {
-                        status = "UNKNOWN";
-                        note = "SCADA kapalıyken program sona erdi; sonuç bilinmiyor.";
-                    }
-                    else
-                    {
-                        status = "ABORTED";
-                        note = _sawSafeStop
-                            ? "Güvenli durdurma (ciddi alarm) ile sonlandı."
-                            : "Program tamamlanmadan durduruldu.";
-                    }
+                    string? endMessage = await RecordProgramEndAsync(status);
+                    if (endMessage != null)
+                        messages.Add(endMessage);
                 }
 
-                int closedCount = 0;
-                if (status != null)
+                // 2. Fırın beklemeye döndüyse son toplamlar yazılır ve şarj kapatılır.
+                if (status.SeqState == SeqIdle)
                 {
-                    closedCount = await CloseRunningBatchesAsync(status, note!);
-                    _sawSafeStop = false;
+                    string? closeMessage = await CloseRunningBatchesAsync(status);
+                    if (closeMessage != null)
+                        messages.Add(closeMessage);
                 }
 
-                // Durum yalnızca kayıt başarılıysa saklanır; hata olursa aynı geçiş yeniden denenir.
+                // Durum yalnızca işlem başarılıysa saklanır; hata olursa aynı geçiş yeniden denenir.
                 _initialized = true;
                 _lastSeqState = seqState;
 
-                return new SuccessResult(closedCount > 0 ? $"Şarj kaydı kapatıldı: {status}" : string.Empty);
+                return new SuccessResult(string.Join(" ", messages));
             }
             catch (Exception ex)
             {
@@ -113,7 +114,7 @@ namespace Business.Concrete
             }
         }
 
-        // Tek şarjın özetini, plan geçmişini ve şarj sırasında oluşan alarmları getirir.
+        // Tek şarjın özetini, plan geçmişini, adım özetlerini ve şarj sırasında oluşan alarmları getirir.
         public async Task<IDataResult<BatchDetailDto>> GetBatchDetailAsync(int batchId)
         {
             try
@@ -129,6 +130,12 @@ namespace Business.Concrete
                     .Where(r => r.BatchId == batchId)
                     .OrderBy(r => r.Timestamp)
                     .ThenBy(r => r.Id)
+                    .ToListAsync();
+
+                var steps = await context.BatchStepSummaries
+                    .AsNoTracking()
+                    .Where(s => s.BatchId == batchId)
+                    .OrderBy(s => s.StepNo)
                     .ToListAsync();
 
                 var userIds = revisions.Select(r => r.UserId).Distinct().ToList();
@@ -158,6 +165,7 @@ namespace Business.Concrete
                         StepNo = r.StepNo,
                         StepMinute = r.StepMinute
                     }).ToList(),
+                    Steps = steps,
                     Alarms = alarms.Select(a => new AlarmHistoryDto
                     {
                         Id = a.Id,
@@ -217,6 +225,121 @@ namespace Business.Concrete
             }
         }
 
+        // PLC'deki şarj numarası açık şarjla aynıysa bitiş sebebini, enerjiyi ve adım özetlerini bir kez kaydeder.
+        private async Task<string?> RecordProgramEndAsync(ScadaStatus status)
+        {
+            await using var context = new NorthwindContext();
+
+            var batch = await context.Batches
+                .FirstOrDefaultAsync(b => b.Status == "RUNNING" && b.Id == status.BatchId);
+
+            // Açık şarj bu program değilse ya da bitişi zaten kaydedildiyse yapılacak bir şey yoktur.
+            if (batch == null || batch.ProgramEndTime != null)
+                return null;
+
+            batch.EndReason = status.EndReason;
+            batch.ProgramEndTime = DateTime.Now;
+            CopyTotals(batch, status);
+            await context.SaveChangesAsync();
+
+            int stepCount = await SaveStepSummariesAsync(context, batch.Id);
+
+            string stepText = stepCount >= 0
+                ? $"{stepCount} adım özeti alındı."
+                : "Adım özetleri alınamadı (DB205 okunamadı ya da başka şarja ait).";
+
+            return $"Şarj {batch.BatchCode}: program bitti (bitiş sebebi {status.EndReason}). {stepText}";
+        }
+
+        // DB205'i okur; tablo bu şarja aitse adım özetlerini kaydeder. Kaydedilen satır sayısını, alınamadıysa -1 döner.
+        private async Task<int> SaveStepSummariesAsync(NorthwindContext context, int batchId)
+        {
+            StepLogData data;
+            try
+            {
+                data = StepLogCodec.Decode(
+                    await _s7DriverDal!.ReadBytesAsync(ScadaLayout.DbStepLog, 0, ScadaLayout.StepLogSize));
+            }
+            catch
+            {
+                // Adım özeti okunamasa da bitiş bilgisi kaydedilmiş kalır.
+                return -1;
+            }
+
+            if (data.LayoutVersion != ScadaLayout.StepLogVersion || data.BatchId != batchId)
+                return -1;
+
+            // Aynı şarj için daha önce alınmış özet varsa yenisiyle değiştirilir.
+            await context.BatchStepSummaries.Where(s => s.BatchId == batchId).ExecuteDeleteAsync();
+
+            foreach (var row in data.Rows)
+            {
+                row.BatchId = batchId;
+                await context.BatchStepSummaries.AddAsync(row);
+            }
+            await context.SaveChangesAsync();
+
+            return data.Rows.Count;
+        }
+
+        // Açık şarjları son toplamlarla ve PLC'den alınan bitiş sebebine göre kapatır.
+        private static async Task<string?> CloseRunningBatchesAsync(ScadaStatus status)
+        {
+            await using var context = new NorthwindContext();
+
+            var running = await context.Batches.Where(b => b.Status == "RUNNING").ToListAsync();
+            if (running.Count == 0)
+                return null;
+
+            DateTime now = DateTime.Now;
+            var closed = new List<string>();
+
+            foreach (var batch in running)
+            {
+                // PLC toplamları bir sonraki Start'a kadar durduğu için beklemede de bu şarja aittir.
+                if (batch.Id == status.BatchId)
+                    CopyTotals(batch, status);
+
+                switch (batch.EndReason)
+                {
+                    case 1:
+                        batch.Status = "COMPLETED";
+                        batch.CompletionNote = "Program tamamlandı.";
+                        break;
+                    case 2:
+                        batch.Status = "ABORTED";
+                        batch.CompletionNote = "Stop komutuyla bitirildi.";
+                        break;
+                    case 3:
+                        batch.Status = "ABORTED";
+                        batch.CompletionNote = "Güvenli durdurma alarmıyla bitti.";
+                        break;
+                    default:
+                        batch.Status = "UNKNOWN";
+                        batch.CompletionNote = "Bitiş bilgisi PLC'den alınamadı (şarj numarası PLC'dekiyle uyuşmuyor).";
+                        break;
+                }
+
+                batch.EndTime = now;
+                closed.Add($"{batch.BatchCode} ({batch.Status})");
+            }
+
+            await context.SaveChangesAsync();
+            return $"Şarj kaydı kapatıldı: {string.Join(", ", closed)}";
+        }
+
+        // PLC'deki şarj toplamlarını ve enerjiyi şarj kaydına kopyalar.
+        private static void CopyTotals(Batch batch, ScadaStatus status)
+        {
+            batch.EnergyKwh = status.BatchEnergyKwh;
+            batch.N2TotalL = status.N2Total;
+            batch.NH3TotalL = status.NH3Total;
+            batch.CO2TotalL = status.CO2Total;
+            batch.WaterTotalL = status.WaterTotal;
+            batch.FillN2TotalL = status.FillN2Total;
+            batch.EmgN2TotalL = status.EmgN2Total;
+        }
+
         // Şarj kayıtlarını liste satırlarına çevirir; reçete adını şarjın başlangıç kopyasından, operatörü kullanıcı tablosundan alır.
         private static async Task<List<BatchListDto>> BuildListAsync(NorthwindContext context, List<Batch> batches)
         {
@@ -256,30 +379,18 @@ namespace Business.Concrete
                     StartTime = b.StartTime,
                     EndTime = b.EndTime,
                     Status = b.Status,
-                    CompletionNote = b.CompletionNote
+                    CompletionNote = b.CompletionNote,
+                    EndReason = b.EndReason,
+                    ProgramEndTime = b.ProgramEndTime,
+                    EnergyKwh = b.EnergyKwh,
+                    N2TotalL = b.N2TotalL,
+                    NH3TotalL = b.NH3TotalL,
+                    CO2TotalL = b.CO2TotalL,
+                    WaterTotalL = b.WaterTotalL,
+                    FillN2TotalL = b.FillN2TotalL,
+                    EmgN2TotalL = b.EmgN2TotalL
                 };
             }).ToList();
-        }
-
-        // Açık (RUNNING) şarj kayıtlarını verilen durum ve notla kapatır; kapatılan kayıt sayısını döner.
-        private static async Task<int> CloseRunningBatchesAsync(string status, string note)
-        {
-            await using var context = new NorthwindContext();
-
-            var running = await context.Batches.Where(b => b.Status == "RUNNING").ToListAsync();
-            if (running.Count == 0)
-                return 0;
-
-            DateTime now = DateTime.Now;
-            foreach (var batch in running)
-            {
-                batch.Status = status;
-                batch.EndTime = now;
-                batch.CompletionNote = note;
-            }
-
-            await context.SaveChangesAsync();
-            return running.Count;
         }
     }
 }
