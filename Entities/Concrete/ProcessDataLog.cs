@@ -34,6 +34,7 @@ namespace Entities.Concrete
         public float NH3FlowAct { get; set; }
         public float H2Act { get; set; }
         public float Kn { get; set; }
+        public bool KnApprox { get; set; }          // Bu anda CO2 veriliyordu; Kn değeri yaklaşıktır
 
         // Çıkışlar (%)
         public float HeatOutAlt { get; set; }

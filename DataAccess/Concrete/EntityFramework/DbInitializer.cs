@@ -15,6 +15,8 @@ namespace DataAccess.Concrete.EntityFramework
             PlcPermissions.Operate,
             PlcPermissions.ProgramEdit,
             PlcPermissions.Manual,
+            PlcPermissions.Override,
+            PlcPermissions.Maintenance,
             ParameterPermissions.SetpointBasicWrite,
             ParameterPermissions.CalibrationWrite,
             ParameterPermissions.GasFlowLimitsWrite,

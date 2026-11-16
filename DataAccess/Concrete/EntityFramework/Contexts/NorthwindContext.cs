@@ -32,6 +32,7 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
         public DbSet<Batch> Batches { get; set; }
         public DbSet<BatchRecipeRevision> BatchRecipeRevisions { get; set; }
         public DbSet<BatchStepSummary> BatchStepSummaries { get; set; }
+        public DbSet<LeakTestRecord> LeakTestRecords { get; set; }
         public DbSet<ProcessDataLog> ProcessDataLogs { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
 
@@ -95,6 +96,12 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
                 .WithMany()
                 .HasForeignKey(s => s.BatchId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // 7. Kaçak testi kayıtları
+            modelBuilder.Entity<LeakTestRecord>()
+                .Property(l => l.ResultText)
+                .HasMaxLength(100)
+                .IsRequired();
         }
 
         // Kaydetmeden önce değişiklikleri toplar, kaydettikten sonra audit log yazar.
@@ -114,9 +121,10 @@ namespace DataAccess.Concrete.EntityFramework.Contexts
 
             foreach (var entry in ChangeTracker.Entries())
             {
-                // AuditLog'un kendisi, ölçüm kayıtları, plan geçmişi, adım özetleri ve değişmeyen veriler loglanmaz.
+                // AuditLog'un kendisi, PLC'den gelen kayıtlar (ölçüm, plan geçmişi, adım özeti, kaçak testi) ve değişmeyen veriler loglanmaz.
                 if (entry.Entity is AuditLog || entry.Entity is ProcessDataLog ||
                     entry.Entity is BatchRecipeRevision || entry.Entity is BatchStepSummary ||
+                    entry.Entity is LeakTestRecord ||
                     entry.State == EntityState.Detached || entry.State == EntityState.Unchanged)
                     continue;
 

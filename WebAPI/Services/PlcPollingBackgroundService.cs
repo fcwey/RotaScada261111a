@@ -32,6 +32,7 @@
             private readonly IAlarmService _alarmService;
             private readonly IHistorianService _historianService;
             private readonly IBatchService _batchService;
+            private readonly IPlcEventService _plcEventService;
             private readonly IHubContext<ScadaHub> _scadaHubContext;
             private readonly IHubContext<AlarmHub> _alarmHubContext;
             private readonly IConfiguration _configuration;
@@ -58,6 +59,7 @@
                 IAlarmService alarmService,
                 IHistorianService historianService,
                 IBatchService batchService,
+                IPlcEventService plcEventService,
                 IHubContext<ScadaHub> scadaHubContext,
                 IHubContext<AlarmHub> alarmHubContext,
                 IConfiguration configuration,
@@ -67,6 +69,7 @@
                 _alarmService = alarmService;
                 _historianService = historianService;
                 _batchService = batchService;
+                _plcEventService = plcEventService;
                 _scadaHubContext = scadaHubContext;
                 _alarmHubContext = alarmHubContext;
                 _configuration = configuration;
@@ -155,7 +158,7 @@
                 }
             }
 
-            // Veritabanı döngüsü: son geçerli durumdan alarmları, şarj kaydını ve ölçümleri işler.
+            // Veritabanı döngüsü: son geçerli durumdan alarmları, şarj kaydını, PLC olaylarını ve ölçümleri işler.
             private async Task RunDatabaseLoopAsync(CancellationToken stoppingToken)
             {
                 while (!stoppingToken.IsCancellationRequested)
@@ -168,6 +171,7 @@
                         {
                             await ProcessAlarmsAsync(status, stoppingToken);
                             await TrackBatchAsync(status, stoppingToken);
+                            await TrackEventsAsync(status, stoppingToken);
                             await LogHistoryIfDueAsync(status, stoppingToken);
                         }
                         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -185,7 +189,7 @@
                 }
             }
 
-            // Bağlantı durumu değiştiyse log dosyasına bir satır yazar; aynı durum sürerken tekrar yazmaz.
+            // Bağlantı durumu değiştiyse log dosyasına bir satır yazar; bağlantı kurulduysa saat eşitlemesini ister.
             private void LogLinkState(string state, string? detail)
             {
                 if (state == _lastLinkState)
@@ -194,9 +198,14 @@
                 _lastLinkState = state;
 
                 if (state == "BAĞLI")
+                {
                     _logger.LogInformation("PLC durumu: {State}", state);
+                    _plcEventService.OnConnected();
+                }
                 else
+                {
                     _logger.LogWarning("PLC durumu: {State} ({Detail})", state, detail);
+                }
             }
 
             // Hatayı ekranlara gönderir ve aynı türden hatayı dakikada en fazla bir kez log dosyasına yazar.
@@ -286,13 +295,27 @@
                 }
             }
 
-            // Sekans durumunu şarj servisine bildirir; şarj kapandıysa bunu log dosyasına yazar.
+            // Sekans durumunu şarj servisine bildirir; bitiş kaydedildiyse ya da şarj kapandıysa log dosyasına yazar.
             private async Task TrackBatchAsync(ScadaStatus status, CancellationToken token)
             {
                 var result = await _batchService.TrackSequenceAsync(status.SeqState);
                 if (!result.IsSuccess)
                 {
                     await ReportErrorAsync("batch", result.Message, null, token);
+                }
+                else if (!string.IsNullOrEmpty(result.Message))
+                {
+                    _logger.LogInformation("{Message}", result.Message);
+                }
+            }
+
+            // Saat eşitleme, kaçak testi ve PID ayar olaylarını izler; olan olayı log dosyasına yazar.
+            private async Task TrackEventsAsync(ScadaStatus status, CancellationToken token)
+            {
+                var result = await _plcEventService.TrackAsync(status);
+                if (!result.IsSuccess)
+                {
+                    await ReportErrorAsync("event", result.Message, null, token);
                 }
                 else if (!string.IsNullOrEmpty(result.Message))
                 {
@@ -338,6 +361,7 @@
                         NH3FlowAct = status.NH3FlowAct,
                         H2Act = status.H2Act,
                         Kn = status.Kn,
+                        KnApprox = status.GetDeviceBit(1, 13),   // CO2 veriliyor, Kn yaklaşık
                         HeatOutAlt = status.HeatOutAlt,
                         HeatOutUst = status.HeatOutUst,
                         FanSpeedAct = status.FanSpeedAct

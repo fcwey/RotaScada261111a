@@ -73,6 +73,14 @@ namespace WebAPI.Controllers
                 return BadRequest(new ErrorResult($"Bilinmeyen komut kodu: {code}"));
 
             var commandCode = (ScadaCommandCode)code;
+
+            // Start ve ApplyEdit reçete ve şarj kaydıyla birlikte yürür; bu uçtan gönderilirse şarj kaydı açılmaz.
+            if (commandCode == ScadaCommandCode.Start || commandCode == ScadaCommandCode.ApplyEdit)
+            {
+                return BadRequest(new ErrorResult(
+                    $"{commandCode} komutu bu uçtan gönderilemez. Reçete uçlarını kullanın: api/recipes/{{id}}/start ya da api/recipes/apply-edit."));
+            }
+
             string? requiredRole = GetRequiredRole(commandCode);
 
             if (requiredRole != null && !HasAnyRole(PlcPermissions.Admin, requiredRole))
@@ -86,7 +94,7 @@ namespace WebAPI.Controllers
 
             var result = await _plcService.SendCommandAsync(commandCode, param1, param2, param3);
 
-            await LogCommandAsync(result.IsSuccess ? "PLC_COMMAND" : "PLC_COMMAND_REJECTED",
+            await LogCommandAsync(GetActionType(commandCode, result.IsSuccess),
                 commandCode, param1, param2, param3, result.Message);
 
             if (result.IsSuccess)
@@ -126,18 +134,26 @@ namespace WebAPI.Controllers
         {
             return code switch
             {
-                ScadaCommandCode.Start => PlcPermissions.Operate,
                 ScadaCommandCode.Stop => PlcPermissions.Operate,
                 ScadaCommandCode.Hold => PlcPermissions.Operate,
                 ScadaCommandCode.Resume => PlcPermissions.Operate,
                 ScadaCommandCode.VacuumOk => PlcPermissions.Operate,
                 ScadaCommandCode.AlarmReset => PlcPermissions.Operate,
+                ScadaCommandCode.LeakTest => PlcPermissions.Operate,
 
                 ScadaCommandCode.SkipToCooling => PlcPermissions.ProgramEdit,
                 ScadaCommandCode.GotoStep => PlcPermissions.ProgramEdit,
-                ScadaCommandCode.ApplyEdit => PlcPermissions.ProgramEdit,
 
                 ScadaCommandCode.Manual => PlcPermissions.Manual,
+
+                ScadaCommandCode.PurgeOverride => PlcPermissions.Override,
+                ScadaCommandCode.HoldExit => PlcPermissions.Override,
+                ScadaCommandCode.LidOverride => PlcPermissions.Override,
+
+                ScadaCommandCode.SetClock => PlcPermissions.Maintenance,
+                ScadaCommandCode.TuneStart => PlcPermissions.Maintenance,
+                ScadaCommandCode.TuneCancel => PlcPermissions.Maintenance,
+                ScadaCommandCode.RunHoursReset => PlcPermissions.Maintenance,
 
                 ScadaCommandCode.BuzzerMute => null,
                 ScadaCommandCode.Validate => null,
@@ -145,6 +161,19 @@ namespace WebAPI.Controllers
                 // Listeye sonradan eklenen komutlar varsayılan olarak yalnızca Admin'e açıktır.
                 _ => PlcPermissions.Admin
             };
+        }
+
+        // İşlem kaydında kullanılacak işlem tipini döner; aşma komutları ayrı tiple kaydedilir.
+        private static string GetActionType(ScadaCommandCode code, bool accepted)
+        {
+            bool isOverride = code == ScadaCommandCode.PurgeOverride ||
+                              code == ScadaCommandCode.HoldExit ||
+                              code == ScadaCommandCode.LidOverride;
+
+            if (isOverride)
+                return accepted ? "PLC_OVERRIDE" : "PLC_OVERRIDE_REJECTED";
+
+            return accepted ? "PLC_COMMAND" : "PLC_COMMAND_REJECTED";
         }
 
         // Kullanıcının verilen rollerden en az birine sahip olup olmadığını döner.
