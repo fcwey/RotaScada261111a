@@ -49,15 +49,15 @@ namespace DesktopUI.ViewModels
         private static readonly CultureInfo Turkish = new CultureInfo("tr-TR");
 
         private readonly ApiClient _api;
-        private readonly SessionService _session;
         private readonly LiveDataService _live;
         private readonly AppSettings _settings;
+        private readonly PageFactory _pages;
         private readonly DispatcherTimer _timer;
         private readonly MenuEntry _alarmMenu;
 
         private ScadaLiveDto? _lastData;
         private DateTime _lastDataAt = DateTime.MinValue;
-        private IDisposable? _pageViewModel;
+        private IDisposable? _pageOwner;
 
         // Üst şeritte adı gösterilen şarj; numara değişince adlar sunucudan yeniden istenir.
         private int _namedBatchId;
@@ -131,7 +131,7 @@ namespace DesktopUI.ViewModels
             set
             {
                 if (SetProperty(ref _selectedMenu, value) && value != null)
-                    CurrentPage = CreatePage(value);
+                    ShowPage(value);
             }
         }
 
@@ -139,9 +139,9 @@ namespace DesktopUI.ViewModels
         public ShellViewModel(ApiClient api, SessionService session, LiveDataService live, AppSettings settings)
         {
             _api = api;
-            _session = session;
             _live = live;
             _settings = settings;
+            _pages = new PageFactory(api, session, live, settings);
 
             FurnaceName = settings.FurnaceName;
             UserName = session.User?.Name ?? string.Empty;
@@ -186,25 +186,18 @@ namespace DesktopUI.ViewModels
             _live.AlarmsReceived -= OnAlarmsReceived;
             _live.ConnectionChanged -= OnConnectionChanged;
 
-            _pageViewModel?.Dispose();
-            _pageViewModel = null;
+            _pageOwner?.Dispose();
+            _pageOwner = null;
         }
 
-        // Önceki sayfayı kapatır ve menüden seçilen sayfayı üretir; yapılmamış sayfalar yer tutucu gösterir.
-        private object CreatePage(MenuEntry entry)
+        // Önceki sayfayı kapatır ve menüden seçilen sayfayı gösterir.
+        private void ShowPage(MenuEntry entry)
         {
-            _pageViewModel?.Dispose();
-            _pageViewModel = null;
+            _pageOwner?.Dispose();
 
-            if (entry.Key == "overview")
-            {
-                var viewModel = new OverviewViewModel(_api, _session, _live, _settings);
-                viewModel.NavigateRequested += Navigate;
-                _pageViewModel = viewModel;
-                return new OverviewView(viewModel);
-            }
-
-            return new PlaceholderPageViewModel(entry.Title);
+            var page = _pages.Create(entry.Key, entry.Title, Navigate);
+            _pageOwner = page.Owner;
+            CurrentPage = page.Content;
         }
 
         // Anahtarı verilen sayfaya geçer.
