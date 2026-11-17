@@ -3,21 +3,111 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <!-- Renkler: açık gri zemin; renk yalnızca durum ve alarm için kullanılır -->
-        <SolidColorBrush x:Key="PageBrush" Color="#E9ECEF" />
-        <SolidColorBrush x:Key="PanelBrush" Color="#F6F7F8" />
-        <SolidColorBrush x:Key="LineBrush" Color="#C9CED4" />
-        <SolidColorBrush x:Key="BarBrush" Color="#2F3640" />
-        <SolidColorBrush x:Key="MutedBrush" Color="#6B7480" />
-        <SolidColorBrush x:Key="OkBrush" Color="#2E7D32" />
-        <SolidColorBrush x:Key="WarnBrush" Color="#E08E00" />
-        <SolidColorBrush x:Key="BadBrush" Color="#C62828" />
-        <SolidColorBrush x:Key="AlarmBackBrush" Color="#F6C9C9" />
 
-        <Style x:Key="BarText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#DDE1E6" />
-            <Setter Property="FontSize" Value="15" />
-            <Setter Property="VerticalAlignment" Value="Center" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- Zemin ve çizgiler -->
+        <SolidColorBrush x:Key="PageBrush" Color="#0A111E" />
+        <SolidColorBrush x:Key="PanelBrush" Color="#0E1728" />
+        <SolidColorBrush x:Key="CardBrush" Color="#121D31" />
+        <SolidColorBrush x:Key="LineBrush" Color="#1E2B42" />
+
+        <!-- Yazı -->
+        <SolidColorBrush x:Key="TextBrush" Color="#E6EDF7" />
+        <SolidColorBrush x:Key="SoftTextBrush" Color="#B4C2D9" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#8FA0BC" />
+
+        <!-- Vurgu ve düğmeler -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#3B9BFF" />
+        <SolidColorBrush x:Key="NavActiveBrush" Color="#17365F" />
+        <SolidColorBrush x:Key="ButtonBrush" Color="#1A2A47" />
+        <SolidColorBrush x:Key="ButtonHoverBrush" Color="#22375C" />
+        <SolidColorBrush x:Key="ButtonLineBrush" Color="#3A4E73" />
+        <SolidColorBrush x:Key="DisabledTextBrush" Color="#7A8BA8" />
+
+        <!-- Durum renkleri: yalnızca durum ve alarm için kullanılır -->
+        <SolidColorBrush x:Key="OkBrush" Color="#3DDC84" />
+        <SolidColorBrush x:Key="OkTextBrush" Color="#5FE39A" />
+        <SolidColorBrush x:Key="OkBackBrush" Color="#12351F" />
+        <SolidColorBrush x:Key="WarnBrush" Color="#F5B84A" />
+        <SolidColorBrush x:Key="WarnTextBrush" Color="#F8C866" />
+        <SolidColorBrush x:Key="WarnBackBrush" Color="#3A2C0B" />
+        <SolidColorBrush x:Key="BadBrush" Color="#FF5A5F" />
+        <SolidColorBrush x:Key="BadTextBrush" Color="#FFD9DA" />
+        <SolidColorBrush x:Key="BadBackBrush" Color="#4A1518" />
+        <SolidColorBrush x:Key="IdleBrush" Color="#6B7C99" />
+        <SolidColorBrush x:Key="HeatBrush" Color="#FF9F45" />
+
+        <!-- Küçük başlık yazısı (panel başlıkları, alan etiketleri) -->
+        <Style x:Key="LabelText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
         </Style>
+
+        <!-- Bütün düğmeler: koyu zemin, köşeleri yuvarlak -->
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource ButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource ButtonLineBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="{StaticResource ButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="{StaticResource NavActiveBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Back" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Back" Property="Background" Value="{StaticResource CardBrush}" />
+                                <Setter TargetName="Back" Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                                <Setter Property="Foreground" Value="{StaticResource DisabledTextBrush}" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Yazı kutuları -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource PageBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource ButtonLineBrush}" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="Padding" Value="8,7" />
+            <Setter Property="FontSize" Value="15" />
+        </Style>
+
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource PageBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource ButtonLineBrush}" />
+            <Setter Property="CaretBrush" Value="White" />
+            <Setter Property="Padding" Value="8,7" />
+            <Setter Property="FontSize" Value="15" />
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource SoftTextBrush}" />
+        </Style>
+
     </Application.Resources>
 </Application>

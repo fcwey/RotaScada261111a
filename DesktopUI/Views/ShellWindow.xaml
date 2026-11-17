@@ -6,9 +6,12 @@
         Width="1600" Height="900" MinWidth="1280" MinHeight="720"
         WindowState="Maximized"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource PageBrush}">
+        Background="{StaticResource PageBrush}"
+        Foreground="{StaticResource TextBrush}"
+        FontFamily="Segoe UI" FontSize="14">
 
     <Window.Resources>
+
         <!-- Henüz yapılmamış sayfalar -->
         <DataTemplate DataType="{x:Type vm:PlaceholderPageViewModel}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -16,85 +19,175 @@
                 <TextBlock Text="Bu sayfa sonraki aşamada eklenecek." Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,8,0,0" />
             </StackPanel>
         </DataTemplate>
+
+        <!-- Sol menü satırı: simge, ad ve varsa sayı rozeti -->
+        <Style x:Key="NavItem" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource SoftTextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Back" Height="46" Margin="0,2" Padding="12,0" CornerRadius="6" Background="Transparent">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" MinWidth="22" Height="22" CornerRadius="11" Padding="6,0"
+                                        Background="{StaticResource WarnBrush}" VerticalAlignment="Center"
+                                        Visibility="{Binding HasBadge, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding Badge}" Foreground="#1A1203" FontSize="12" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <Path x:Name="Icon" Data="{Binding Icon}" Width="18" Height="18"
+                                      Stroke="{StaticResource MutedBrush}" StrokeThickness="1.6"
+                                      StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding Title}" Margin="12,0,0,0" VerticalAlignment="Center" />
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="{StaticResource CardBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="{StaticResource NavActiveBrush}" />
+                                <Setter TargetName="Icon" Property="Stroke" Value="#6FB6FF" />
+                                <Setter Property="Foreground" Value="White" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
     </Window.Resources>
 
     <DockPanel>
 
+        <!-- Sol menü -->
+        <Border DockPanel.Dock="Left" Width="200" Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="12,20,12,16">
+
+                <StackPanel DockPanel.Dock="Top" Margin="10,0,10,18">
+                    <TextBlock Text="RotaScada" FontSize="20" FontWeight="Bold" />
+                    <TextBlock Text="{Binding FurnaceName}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="10,14,10,0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding TimeText}" FontSize="22" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding DateText}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
+                        <DockPanel Margin="0,12,0,0">
+                            <Button DockPanel.Dock="Right" Content="Çıkış" Command="{Binding LogoutCommand}"
+                                    Height="32" Padding="12,0" FontSize="13" Background="Transparent" />
+                            <TextBlock Text="{Binding UserName}" Foreground="{StaticResource SoftTextBrush}"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <ListBox ItemsSource="{Binding MenuItems}" SelectedItem="{Binding SelectedMenu}"
+                         ItemContainerStyle="{StaticResource NavItem}"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+            </DockPanel>
+        </Border>
+
         <!-- Üst durum şeridi -->
-        <Border DockPanel.Dock="Top" Background="{StaticResource BarBrush}" Height="56">
-            <DockPanel Margin="16,0">
+        <Border DockPanel.Dock="Top" Height="64" Background="{StaticResource PanelBrush}"
+                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+            <DockPanel Margin="20,0">
 
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border CornerRadius="3" Padding="10,4" Margin="0,0,18,0" ToolTip="{Binding LinkDetail}">
+                    <Border Height="32" CornerRadius="16" Padding="14,0" Margin="0,0,10,0"
+                            BorderBrush="{StaticResource ButtonLineBrush}" BorderThickness="1">
+                        <TextBlock Text="{Binding ModeText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </Border>
+                    <Border Height="32" CornerRadius="16" Padding="14,0" ToolTip="{Binding LinkDetail}">
                         <Border.Style>
                             <Style TargetType="Border">
-                                <Setter Property="Background" Value="{StaticResource BadBrush}" />
+                                <Setter Property="Background" Value="{StaticResource BadBackBrush}" />
+                                <Setter Property="TextElement.Foreground" Value="{StaticResource BadTextBrush}" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding LinkLevel}" Value="Ok">
-                                        <Setter Property="Background" Value="{StaticResource OkBrush}" />
+                                        <Setter Property="Background" Value="{StaticResource OkBackBrush}" />
+                                        <Setter Property="TextElement.Foreground" Value="{StaticResource OkTextBrush}" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding LinkLevel}" Value="Warn">
-                                        <Setter Property="Background" Value="{StaticResource WarnBrush}" />
+                                        <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
+                                        <Setter Property="TextElement.Foreground" Value="{StaticResource WarnTextBrush}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <TextBlock Text="{Binding LinkText}" Foreground="White" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding LinkText}" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </Border>
-                    <TextBlock Text="{Binding UserName}" Style="{StaticResource BarText}" Margin="0,0,18,0" />
-                    <TextBlock Text="{Binding ClockText}" Style="{StaticResource BarText}" Margin="0,0,18,0" />
-                    <Button Content="Çıkış" Command="{Binding LogoutCommand}" Padding="12,4" />
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding FurnaceName}" Style="{StaticResource BarText}" FontWeight="SemiBold" Margin="0,0,24,0" />
-                    <TextBlock Text="{Binding SeqText}" Foreground="White" FontSize="20" FontWeight="Bold" Margin="0,0,24,0" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding StepText}" Style="{StaticResource BarText}" Margin="0,0,24,0" />
-                    <TextBlock Text="{Binding BatchText}" Style="{StaticResource BarText}" Margin="0,0,24,0" />
-                    <TextBlock Text="{Binding ModeText}" Style="{StaticResource BarText}" FontWeight="SemiBold" />
+                    <Ellipse Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="{StaticResource IdleBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SeqLevel}" Value="Run">
+                                        <Setter Property="Fill" Value="{StaticResource OkBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SeqLevel}" Value="Hold">
+                                        <Setter Property="Fill" Value="{StaticResource WarnBrush}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SeqLevel}" Value="Stop">
+                                        <Setter Property="Fill" Value="{StaticResource BadBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding SeqText}" FontSize="26" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,28,0" />
+
+                    <StackPanel Margin="0,0,28,0" VerticalAlignment="Center">
+                        <TextBlock Text="Adım" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding StepText}" FontSize="16" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel Margin="0,0,28,0" VerticalAlignment="Center">
+                        <TextBlock Text="Program kalan" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding RemainText}" FontSize="16" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel Margin="0,0,28,0" VerticalAlignment="Center">
+                        <TextBlock Text="Reçete" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding RecipeText}" FontSize="16" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Şarj" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding BatchText}" FontSize="16" FontWeight="SemiBold" />
+                    </StackPanel>
                 </StackPanel>
 
             </DockPanel>
         </Border>
 
-        <!-- Alt alarm şeridi -->
-        <Border DockPanel.Dock="Bottom" Height="48">
+        <!-- Alt alarm şeridi: her sayfada görünür -->
+        <Border DockPanel.Dock="Bottom" Height="52" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">
             <Border.Style>
                 <Style TargetType="Border">
                     <Setter Property="Background" Value="{StaticResource PanelBrush}" />
                     <Style.Triggers>
                         <DataTrigger Binding="{Binding HasAlarm}" Value="True">
-                            <Setter Property="Background" Value="{StaticResource AlarmBackBrush}" />
+                            <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
                         </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <DockPanel Margin="16,0">
+            <DockPanel Margin="20,0">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{Binding CommandMessage}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,16,0" />
-                    <Button Content="Sustur" Command="{Binding MuteCommand}" Padding="14,5" Margin="0,0,8,0" />
-                    <Button Content="Alarm Reset" Command="{Binding AlarmResetCommand}" Padding="14,5" />
+                    <Button Content="Sustur" Command="{Binding MuteCommand}" Margin="0,0,8,0" />
+                    <Button Content="Alarm Reset" Command="{Binding AlarmResetCommand}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock VerticalAlignment="Center" FontWeight="Bold" Margin="0,0,16,0">
-                        <Run Text="{Binding AlarmCount, Mode=OneWay}" />
-                        <Run Text="aktif alarm" />
-                    </TextBlock>
-                    <TextBlock Text="{Binding AlarmText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding AlarmCountText}" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <TextBlock Text="{Binding AlarmText}" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </DockPanel>
-        </Border>
-
-        <!-- Sol menü -->
-        <Border DockPanel.Dock="Left" Width="190" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
-            <ListBox ItemsSource="{Binding MenuItems}" SelectedItem="{Binding SelectedMenu}"
-                     DisplayMemberPath="Title" BorderThickness="0" Background="Transparent" FontSize="16">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Padding" Value="18,12" />
-                    </Style>
-                </ListBox.ItemContainerStyle>
-            </ListBox>
         </Border>
 
         <!-- Seçili sayfa -->
