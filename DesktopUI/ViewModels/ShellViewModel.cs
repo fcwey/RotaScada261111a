@@ -2,6 +2,7 @@
 using CommunityToolkit.Mvvm.Input;
 using DesktopUI.Helpers;
 using DesktopUI.Services;
+using DesktopUI.Views;
 using Entities.Dtos;
 using Entities.Enums;
 using System.Globalization;
@@ -48,6 +49,7 @@ namespace DesktopUI.ViewModels
         private static readonly CultureInfo Turkish = new CultureInfo("tr-TR");
 
         private readonly ApiClient _api;
+        private readonly SessionService _session;
         private readonly LiveDataService _live;
         private readonly AppSettings _settings;
         private readonly DispatcherTimer _timer;
@@ -55,6 +57,12 @@ namespace DesktopUI.ViewModels
 
         private ScadaLiveDto? _lastData;
         private DateTime _lastDataAt = DateTime.MinValue;
+        private IDisposable? _pageViewModel;
+
+        // Üst şeritte adı gösterilen şarj; numara değişince adlar sunucudan yeniden istenir.
+        private int _namedBatchId;
+        private string? _recipeName;
+        private string? _batchCode;
 
         private string _seqText = NoValue;
         private string _seqLevel = "Idle";
@@ -131,6 +139,7 @@ namespace DesktopUI.ViewModels
         public ShellViewModel(ApiClient api, SessionService session, LiveDataService live, AppSettings settings)
         {
             _api = api;
+            _session = session;
             _live = live;
             _settings = settings;
 
@@ -169,19 +178,41 @@ namespace DesktopUI.ViewModels
             _ = LoadAlarmsAsync();
         }
 
-        // Olay aboneliklerini bırakır ve zamanlayıcıyı durdurur.
+        // Olay aboneliklerini bırakır, açık sayfayı kapatır ve zamanlayıcıyı durdurur.
         public void Shutdown()
         {
             _timer.Stop();
             _live.DataReceived -= OnDataReceived;
             _live.AlarmsReceived -= OnAlarmsReceived;
             _live.ConnectionChanged -= OnConnectionChanged;
+
+            _pageViewModel?.Dispose();
+            _pageViewModel = null;
         }
 
-        // Menüden seçilen sayfanın içeriğini üretir; sayfalar sonraki aşamalarda eklenecek.
+        // Önceki sayfayı kapatır ve menüden seçilen sayfayı üretir; yapılmamış sayfalar yer tutucu gösterir.
         private object CreatePage(MenuEntry entry)
         {
+            _pageViewModel?.Dispose();
+            _pageViewModel = null;
+
+            if (entry.Key == "overview")
+            {
+                var viewModel = new OverviewViewModel(_api, _session, _live, _settings);
+                viewModel.NavigateRequested += Navigate;
+                _pageViewModel = viewModel;
+                return new OverviewView(viewModel);
+            }
+
             return new PlaceholderPageViewModel(entry.Title);
+        }
+
+        // Anahtarı verilen sayfaya geçer.
+        private void Navigate(string key)
+        {
+            var target = MenuItems.FirstOrDefault(m => m.Key == key);
+            if (target != null)
+                SelectedMenu = target;
         }
 
         // Sunucudan gelen canlı veri paketini saklar ve üst şeridi günceller.
@@ -219,6 +250,21 @@ namespace DesktopUI.ViewModels
             var result = await _api.GetAsync<List<ActiveAlarmDto>>("api/alarms/active");
             if (result.IsSuccess && result.Data != null)
                 OnAlarmsReceived(result.Data);
+        }
+
+        // Çalışan şarjın kodunu ve reçete adını sunucudan alır; üst şerit numara yerine bunları gösterir.
+        private async Task LoadBatchNamesAsync(int batchId)
+        {
+            var result = await _api.GetAsync<BatchDetailDto>($"api/batches/{batchId}");
+            if (batchId != _namedBatchId)
+                return;
+
+            if (result.IsSuccess && result.Data != null)
+            {
+                _recipeName = result.Data.Batch.RecipeName;
+                _batchCode = result.Data.Batch.BatchCode;
+                Refresh();
+            }
         }
 
         // Alt şeritteki komut düğmelerinin komutunu PLC'ye gönderir ve sonucu şeritte gösterir.
@@ -282,9 +328,20 @@ namespace DesktopUI.ViewModels
             StepText = programActive ? status.ActiveStep.ToString() : NoValue;
             RemainText = programActive ? StatusTexts.FormatMinutes(status.PrgRemainMin) : NoValue;
 
+            // Şarj değiştiyse adları yeniden istenir; gelene kadar numaralar gösterilir.
+            if (status.BatchId != _namedBatchId)
+            {
+                _namedBatchId = status.BatchId;
+                _recipeName = null;
+                _batchCode = null;
+
+                if (status.BatchId > 0)
+                    _ = LoadBatchNamesAsync(status.BatchId);
+            }
+
             bool hasBatch = status.BatchId > 0;
-            RecipeText = hasBatch ? $"no {status.ActiveRecipeID}" : NoValue;
-            BatchText = hasBatch ? $"no {status.BatchId}" : NoValue;
+            RecipeText = !hasBatch ? NoValue : _recipeName ?? $"no {status.ActiveRecipeID}";
+            BatchText = !hasBatch ? NoValue : _batchCode ?? $"no {status.BatchId}";
         }
 
         // Sekans durumunu üst şeritteki durum noktasının rengini belirleyen seviyeye çevirir.
