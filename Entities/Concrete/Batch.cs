@@ -16,6 +16,7 @@ namespace Entities.Concrete
         public DateTime? EndTime { get; set; }                  // Şarjın kapandığı an (fırın beklemeye döndü)
         public string Status { get; set; } = "RUNNING";         // STARTING, RUNNING, COMPLETED, ABORTED, UNKNOWN
         public string? CompletionNote { get; set; }
+        public float? LoadKg { get; set; }                      // Operatörün girdiği şarj ağırlığı; sonradan düzeltilebilir
 
         // PLC'den alınan bitiş bilgisi
         public int? EndReason { get; set; }                     // 1 tamamlandı, 2 stop, 3 güvenli durdurma

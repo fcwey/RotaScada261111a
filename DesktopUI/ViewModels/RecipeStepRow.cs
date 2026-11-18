@@ -6,6 +6,11 @@ namespace DesktopUI.ViewModels
     // Reçete düzenleme tablosundaki bir adım satırı; hangi alanların görüneceğini adım ve reçete tipine göre belirler.
     public class RecipeStepRow : ObservableObject
     {
+        // Yeni adımlarda kullanılan başlangıç değerleri
+        public const int DefaultVacSetPoint = 200;   // mbar mutlak
+        public const int DefaultVacTimeout = 20;     // dk
+        public const int DefaultFanSpeed = 100;      // %
+
         private readonly Action _changed;
 
         private int _stepNo;
@@ -31,8 +36,11 @@ namespace DesktopUI.ViewModels
             get => _stepType;
             set
             {
-                if (Change(ref _stepType, value))
-                    NotifyVisibility();
+                if (!Change(ref _stepType, value))
+                    return;
+
+                ApplyTypeDefaults();
+                NotifyVisibility();
             }
         }
 
@@ -143,6 +151,24 @@ namespace DesktopUI.ViewModels
                 H2_Set = ShowH2Set ? (int)Math.Round(H2SetPercent * 10) : 0,
                 FanSpeed = ShowFan ? FanSpeed : 0
             };
+        }
+
+        // Adım tipi değişince boş kalan alanlara başlangıç değerlerini koyar: vakumda set ve zaman aşımı, diğerlerinde fan.
+        private void ApplyTypeDefaults()
+        {
+            if (IsVacuum && _vacSetPoint == 0 && _vacTimeout == 0)
+            {
+                _vacSetPoint = DefaultVacSetPoint;
+                _vacTimeout = DefaultVacTimeout;
+                OnPropertyChanged(nameof(VacSetPoint));
+                OnPropertyChanged(nameof(VacTimeout));
+            }
+
+            if (!IsVacuum && _fanSpeed == 0)
+            {
+                _fanSpeed = DefaultFanSpeed;
+                OnPropertyChanged(nameof(FanSpeed));
+            }
         }
 
         // Alanı günceller ve değiştiyse reçetenin değiştiğini bildirir.

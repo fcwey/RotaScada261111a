@@ -32,6 +32,12 @@ namespace DesktopUI.Views
                         return (new OverviewView(viewModel), viewModel);
                     }
 
+                case "program":
+                    {
+                        var viewModel = new ProgramViewModel(_api, _session, _live, _settings);
+                        return (new ProgramView(viewModel), viewModel);
+                    }
+
                 case "recipes":
                     {
                         var viewModel = new RecipesViewModel(_api, _session);

@@ -22,6 +22,7 @@ namespace Entities.Concrete
 
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public bool IsActive { get; set; } = true;
+        public bool IsPinned { get; set; }                  // Listede kendi tipinin başına sabitlenmiş (yalnızca SCADA'da, PLC'ye gitmez)
 
         public virtual ICollection<RecipeStep> Steps { get; set; } = new List<RecipeStep>();
     }

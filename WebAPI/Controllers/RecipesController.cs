@@ -3,6 +3,8 @@ using Core.Constants;
 using Core.Extensions;
 using Core.Utilities.Results;
 using Entities.Concrete;
+using Entities.Dtos;
+using Entities.Structures;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -19,13 +21,22 @@ namespace WebAPI.Controllers
     public class RecipesController : ControllerBase
     {
         private readonly IRecipeService _recipeService;
+        private readonly IRecipeListService _recipeListService;
+        private readonly IBatchInfoService _batchInfoService;
         private readonly IAuditTrailService _auditTrailService;
         private readonly IHubContext<ScadaHub> _scadaHubContext;
 
-        // Reçete, işlem kaydı ve ekran bildirimi bağımlılıklarını alır.
-        public RecipesController(IRecipeService recipeService, IAuditTrailService auditTrailService, IHubContext<ScadaHub> scadaHubContext)
+        // Reçete, şarj bilgisi, işlem kaydı ve ekran bildirimi bağımlılıklarını alır.
+        public RecipesController(
+            IRecipeService recipeService,
+            IRecipeListService recipeListService,
+            IBatchInfoService batchInfoService,
+            IAuditTrailService auditTrailService,
+            IHubContext<ScadaHub> scadaHubContext)
         {
             _recipeService = recipeService;
+            _recipeListService = recipeListService;
+            _batchInfoService = batchInfoService;
             _auditTrailService = auditTrailService;
             _scadaHubContext = scadaHubContext;
         }
@@ -91,6 +102,18 @@ namespace WebAPI.Controllers
             return BadRequest(result);
         }
 
+        // Reçeteyi listede kendi tipinin başına sabitler ya da sabitlemeyi kaldırır; Plc.ProgramEdit ya da Admin yetkisi gerekir.
+        [HttpPut("{id:int}/pin")]
+        public async Task<IActionResult> SetPinned(int id, [FromQuery] bool pinned = true)
+        {
+            if (!HasAnyRole(PlcPermissions.Admin, PlcPermissions.ProgramEdit))
+                return Forbidden(PlcPermissions.ProgramEdit);
+
+            var result = await _recipeListService.SetPinnedAsync(id, pinned);
+            if (result.IsSuccess) return Ok(result);
+            return BadRequest(result);
+        }
+
         // Reçeteyi PLC'ye yazıp yalnızca kontrol ettirir; Plc.Operate ya da Admin yetkisi gerekir.
         [HttpPost("{id:int}/validate")]
         public async Task<IActionResult> ValidateOnPlc(int id)
@@ -103,9 +126,9 @@ namespace WebAPI.Controllers
             return BadRequest(result);
         }
 
-        // Reçeteyi PLC'ye yazıp programı başlatır ve ekranlara yeni plan bildirimi gönderir; Plc.Operate ya da Admin yetkisi gerekir.
+        // Reçeteyi PLC'ye yazıp programı başlatır, girilen şarj ağırlığını ve notu şarja işler; Plc.Operate ya da Admin yetkisi gerekir.
         [HttpPost("{id:int}/start")]
-        public async Task<IActionResult> Start(int id)
+        public async Task<IActionResult> Start(int id, [FromBody] StartRequestDto? request = null)
         {
             if (!HasAnyRole(PlcPermissions.Admin, PlcPermissions.Operate))
                 return Forbidden(PlcPermissions.Operate);
@@ -113,12 +136,17 @@ namespace WebAPI.Controllers
             var result = await _recipeService.StartRecipeAsync(id, User.GetUserId());
             await LogAsync(result.IsSuccess ? "RECIPE_START" : "RECIPE_START_REJECTED", $"Reçete id {id}. Sonuç: {result.Message}");
 
-            if (result.IsSuccess)
-            {
-                await NotifyProfileChangedAsync();
-                return Ok(result);
-            }
-            return BadRequest(result);
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            await NotifyProfileChangedAsync();
+
+            // Program başladı; şarj bilgisi yazılamazsa program etkilenmez, operatör uyarılır.
+            string? infoWarning = await SaveStartInfoAsync(request);
+            if (infoWarning != null)
+                return Ok(new SuccessDataResult<ScadaCommandResult>(result.Data, $"{result.Message} {infoWarning}"));
+
+            return Ok(result);
         }
 
         // PLC'de çalışan reçeteyi (DB203) döner.
@@ -147,6 +175,34 @@ namespace WebAPI.Controllers
                 return Ok(result);
             }
             return BadRequest(result);
+        }
+
+        // Başlatırken girilen ağırlığı ve notu yeni açılan şarja yazar; sorun olursa operatöre gösterilecek uyarıyı döner.
+        private async Task<string?> SaveStartInfoAsync(StartRequestDto? request)
+        {
+            bool hasNote = !string.IsNullOrWhiteSpace(request?.Note);
+            if (request == null || (!request.LoadKg.HasValue && !hasNote))
+                return null;
+
+            int? batchId = await _batchInfoService.GetOpenBatchIdAsync();
+            if (batchId == null)
+                return "Şarj kaydı açılamadığı için ağırlık ve not kaydedilemedi.";
+
+            if (request.LoadKg.HasValue)
+            {
+                var load = await _batchInfoService.SetLoadAsync(batchId.Value, request.LoadKg);
+                if (!load.IsSuccess)
+                    return load.Message;
+            }
+
+            if (hasNote)
+            {
+                var note = await _batchInfoService.AddNoteAsync(batchId.Value, User.GetUserId(), request.Note);
+                if (!note.IsSuccess)
+                    return note.Message;
+            }
+
+            return null;
         }
 
         // Bağlı ekranlara teorik planın değiştiğini bildirir; ekranlar eğriyi yeniden çeker. Gönderim hatası işlemi etkilemez.

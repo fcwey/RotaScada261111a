@@ -13,12 +13,21 @@ namespace DesktopUI.Controls
         public int Kind { get; set; }       // 1 vakum, 2 ısıtma, 3 soğutma
     }
 
+    // Eğri üzerinde işaretlenen nokta (adımın başlangıcı ya da bitişi) ve yanındaki yazı
+    public class ProfileMarker
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public string Label { get; set; } = string.Empty;
+    }
+
     // Sıcaklık profili grafiğinin verisi: X saat, Y °C
     public class ProfileChartData
     {
         public List<List<Point>> Theory { get; set; } = new();   // Teorik eğri parçaları
         public List<Point> Actual { get; set; } = new();         // Gerçekleşen pota sıcaklığı
         public List<ProfileBand> Bands { get; set; } = new();    // Adım bölgeleri (isteğe bağlı)
+        public List<ProfileMarker> Markers { get; set; } = new();// Adım başlangıç ve bitiş noktaları (isteğe bağlı)
         public double NowX { get; set; } = -1;                   // Şu anın X konumu; eksi ise çizilmez
         public double XMax { get; set; } = 1;
         public double YMax { get; set; } = 100;
@@ -29,10 +38,14 @@ namespace DesktopUI.Controls
     // Teorik sıcaklık eğrisini kesikli, gerçekleşen sıcaklığı düz çizgiyle çizen sade grafik
     public class ProfileChart : FrameworkElement
     {
-        private const double PadLeft = 46, PadRight = 16, PadTop = 26, PadBottom = 24;
+        private const double PadLeft = 46, PadRight = 22, PadTop = 30, PadBottom = 24;
 
         private static readonly Brush GridBrush = Frozen("#1E2B42");
+        private static readonly Brush SeparatorBrush = Frozen("#33456A");
+        private static readonly Brush ShadeBrush = Frozen("#0AFFFFFF");
+        private static readonly Brush BackBrush = Frozen("#121D31");
         private static readonly Brush TextBrush = Frozen("#8FA0BC");
+        private static readonly Brush StrongTextBrush = Frozen("#E6EDF7");
         private static readonly Brush TheoryBrush = Frozen("#D5DEEC");
         private static readonly Brush ActualBrush = Frozen("#3B9BFF");
         private static readonly Brush NowBrush = Frozen("#5FE39A");
@@ -49,7 +62,7 @@ namespace DesktopUI.Controls
             set => SetValue(DataProperty, value);
         }
 
-        // Adım tipinin rengini döner (satırlardaki renklerle aynı).
+        // Adım tipinin rengini döner (satırlardaki şerit renkleriyle aynı).
         public static Color KindColor(int kind)
         {
             return kind switch
@@ -61,7 +74,7 @@ namespace DesktopUI.Controls
             };
         }
 
-        // Adım bölgelerini, ızgarayı, eksen yazılarını, eğrileri ve "şimdi" işaretini çizer.
+        // Adım bölgelerini, ızgarayı, eksen yazılarını, eğrileri, adım noktalarını ve "şimdi" işaretini çizer.
         protected override void OnRender(DrawingContext dc)
         {
             double width = ActualWidth - PadLeft - PadRight;
@@ -81,7 +94,8 @@ namespace DesktopUI.Controls
             double yMax = Math.Max(data.YMax, 1);
 
             double MapX(double x) => PadLeft + x / xMax * width;
-            Point Map(Point p) => new Point(MapX(p.X), PadTop + height - p.Y / yMax * height);
+            double MapY(double y) => PadTop + height - y / yMax * height;
+            Point Map(Point p) => new Point(MapX(p.X), MapY(p.Y));
 
             DrawBands(dc, data, MapX, height);
 
@@ -112,6 +126,8 @@ namespace DesktopUI.Controls
             var actual = data.Actual.Select(Map).ToList();
             DrawLine(dc, actualPen, actual);
 
+            DrawMarkers(dc, data, Map, width);
+
             if (data.NowX >= 0 && data.NowX <= xMax)
             {
                 double x = MapX(data.NowX);
@@ -123,26 +139,53 @@ namespace DesktopUI.Controls
                 dc.DrawEllipse(ActualBrush, null, actual[^1], 4.5, 4.5);
         }
 
-        // Her adımı kendi renginde hafif bir bölge, üstte renkli çizgi ve adım yazısıyla çizer.
+        // Her adımı ayırıcı çizgiyle böler, bir atlayarak hafif gölgelendirir; üstte tip renginde ince şerit ve adım numarası çizer.
         private void DrawBands(DrawingContext dc, ProfileChartData data, Func<double, double> mapX, double height)
         {
-            foreach (var band in data.Bands)
+            var separatorPen = new Pen(SeparatorBrush, 1);
+
+            for (int i = 0; i < data.Bands.Count; i++)
             {
+                var band = data.Bands[i];
                 double x1 = mapX(band.X1), x2 = mapX(band.X2);
                 if (x2 - x1 < 1)
                     continue;
 
-                Color color = KindColor(band.Kind);
-                var fill = new SolidColorBrush(Color.FromArgb(0x26, color.R, color.G, color.B));
-                var solid = new SolidColorBrush(color);
+                if (i % 2 == 1)
+                    dc.DrawRectangle(ShadeBrush, null, new Rect(x1, PadTop, x2 - x1, height));
 
-                dc.DrawRectangle(fill, null, new Rect(x1, PadTop, x2 - x1, height));
-                dc.DrawRectangle(solid, null, new Rect(x1 + 1, PadTop - 4, Math.Max(1, x2 - x1 - 2), 3));
+                dc.DrawLine(separatorPen, new Point(x1, PadTop - 6), new Point(x1, PadTop + height));
+                if (i == data.Bands.Count - 1)
+                    dc.DrawLine(separatorPen, new Point(x2, PadTop - 6), new Point(x2, PadTop + height));
+
+                var stripe = new SolidColorBrush(KindColor(band.Kind));
+                dc.DrawRectangle(stripe, null, new Rect(x1 + 2, PadTop - 6, Math.Max(1, x2 - x1 - 4), 3));
 
                 // Yazı bölgeye sığmıyorsa çizilmez.
-                var text = Format(band.Label, solid, BoldFace);
+                var text = Format(band.Label, StrongTextBrush, BoldFace);
                 if (text.Width <= x2 - x1 - 4)
-                    dc.DrawText(text, new Point((x1 + x2) / 2 - text.Width / 2, PadTop - 21));
+                    dc.DrawText(text, new Point((x1 + x2) / 2 - text.Width / 2, PadTop - 23));
+            }
+        }
+
+        // Adımların başlangıç ve bitiş noktalarını daireyle işaretler ve üstlerine sıcaklığı yazar.
+        private void DrawMarkers(DrawingContext dc, ProfileChartData data, Func<Point, Point> map, double width)
+        {
+            var ringPen = new Pen(TheoryBrush, 2);
+
+            foreach (var marker in data.Markers)
+            {
+                Point p = map(new Point(marker.X, marker.Y));
+                dc.DrawEllipse(BackBrush, ringPen, p, 4, 4);
+
+                var text = Format(marker.Label, StrongTextBrush, BoldFace);
+
+                // Yazı noktanın üstüne, grafiğin dışına taşmayacak şekilde yerleştirilir; tepeye yakınsa altına iner.
+                double x = Math.Clamp(p.X - text.Width / 2, PadLeft + 2, PadLeft + width - text.Width);
+                double y = p.Y - 20 < PadTop ? p.Y + 8 : p.Y - 20;
+
+                dc.DrawRectangle(BackBrush, null, new Rect(x - 2, y, text.Width + 4, text.Height));
+                dc.DrawText(text, new Point(x, y));
             }
         }
 

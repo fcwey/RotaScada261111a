@@ -4,7 +4,9 @@ using Core.Constants;
 using DesktopUI.Controls;
 using DesktopUI.Helpers;
 using DesktopUI.Services;
+using DesktopUI.Views;
 using Entities.Concrete;
+using Entities.Dtos;
 using Entities.Structures;
 using System.Collections.ObjectModel;
 using System.Text.Json;
@@ -39,6 +41,12 @@ namespace DesktopUI.ViewModels
         public int RecipeType { get; set; }
         public string Name { get; set; } = string.Empty;
         public string Info { get; set; } = string.Empty;
+        public string GroupName { get; set; } = string.Empty;   // Menevişler, Nitrasyonlar, Oksidasyonlar
+        public bool IsPinned { get; set; }
+        public int MaxTemp { get; set; }                        // Reçetedeki en yüksek ısıtma sıcaklığı
+        public string TempText { get; set; } = string.Empty;
+        public bool ShowTemp { get; set; }                      // Sıcaklık etiketi yalnızca sıcaklığa göre sıralamada görünür
+        public string PinTip => IsPinned ? "Sabitlemeyi kaldır" : "Grubun başına sabitle";
     }
 
     // Reçeteler sayfası: liste, düzenleme, PLC'de kontrol ve başlatma
@@ -46,8 +54,9 @@ namespace DesktopUI.ViewModels
     {
         private const int MaxSteps = 20;
         private const int NameMaxLength = 30;
-        private const int DefaultFanSpeed = 100;
         private const float PreviewStartTemp = 20f;
+        private const int SortByName = 0;
+        private const int SortByTemp = 1;
 
         private readonly ApiClient _api;
         private readonly bool _canEdit;
@@ -61,6 +70,7 @@ namespace DesktopUI.ViewModels
         private RecipeListItem? _selectedRecipe;
         private string _searchText = string.Empty;
         private int _typeFilter;
+        private int _sortMode;
         private string _name = string.Empty;
         private int _recipeType = 2;
         private int _pressureSetPoint;
@@ -82,7 +92,12 @@ namespace DesktopUI.ViewModels
 
         public List<Option> TypeFilters { get; } = new()
         {
-            new Option(0, "Tümü"), new Option(1, "Meneviş"), new Option(2, "Nitrasyon"), new Option(3, "Oksidasyon")
+            new Option(0, "Bütün tipler"), new Option(1, "Meneviş"), new Option(2, "Nitrasyon"), new Option(3, "Oksidasyon")
+        };
+
+        public List<Option> SortModes { get; } = new()
+        {
+            new Option(SortByName, "Ada göre sırala"), new Option(SortByTemp, "Sıcaklığa göre sırala")
         };
 
         public List<Option> RecipeTypes { get; } = new()
@@ -114,6 +129,7 @@ namespace DesktopUI.ViewModels
         public IRelayCommand<RecipeStepRow> RemoveStepCommand { get; }
         public IRelayCommand<RecipeStepRow> MoveUpCommand { get; }
         public IRelayCommand<RecipeStepRow> MoveDownCommand { get; }
+        public IAsyncRelayCommand<RecipeListItem> TogglePinCommand { get; }
         public IAsyncRelayCommand ValidateCommand { get; }
         public IAsyncRelayCommand StartCommand { get; }
 
@@ -172,6 +188,17 @@ namespace DesktopUI.ViewModels
             set
             {
                 if (SetProperty(ref _typeFilter, value))
+                    ApplyFilter();
+            }
+        }
+
+        // Grup içi sıralama: 0 ada göre, 1 en yüksek sıcaklığa göre
+        public int SortMode
+        {
+            get => _sortMode;
+            set
+            {
+                if (SetProperty(ref _sortMode, value))
                     ApplyFilter();
             }
         }
@@ -235,6 +262,7 @@ namespace DesktopUI.ViewModels
             RemoveStepCommand = new RelayCommand<RecipeStepRow>(RemoveStep, _ => _canEdit && Steps.Count > 1);
             MoveUpCommand = new RelayCommand<RecipeStepRow>(row => MoveStep(row, -1), _ => _canEdit);
             MoveDownCommand = new RelayCommand<RecipeStepRow>(row => MoveStep(row, 1), _ => _canEdit);
+            TogglePinCommand = new AsyncRelayCommand<RecipeListItem>(TogglePinAsync, _ => _canEdit);
             ValidateCommand = new AsyncRelayCommand(ValidateAsync, () => _canOperate && HasEditor && _editId > 0 && !IsDirty);
             StartCommand = new AsyncRelayCommand(StartAsync, () => _canOperate && HasEditor && _editId > 0 && !IsDirty);
 
@@ -257,36 +285,67 @@ namespace DesktopUI.ViewModels
             }
 
             _allRecipes.Clear();
-            foreach (var recipe in result.Data.OrderBy(r => r.RecipeName))
+            foreach (var recipe in result.Data)
             {
+                // En yüksek sıcaklık yalnızca ısıtma adımlarından alınır.
+                int maxTemp = recipe.Steps.Where(s => s.StepType == 2).Select(s => s.TargetTemp).DefaultIfEmpty(0).Max();
+
                 _allRecipes.Add(new RecipeListItem
                 {
                     Id = recipe.Id,
                     RecipeType = recipe.RecipeType,
                     Name = recipe.RecipeName,
-                    Info = $"{DescribeType(recipe.RecipeType)} · {recipe.TotalStepCount} adım · no {recipe.Id}"
+                    Info = $"{recipe.TotalStepCount} adım · no {recipe.Id}",
+                    GroupName = DescribeGroup(recipe.RecipeType),
+                    IsPinned = recipe.IsPinned,
+                    MaxTemp = maxTemp,
+                    TempText = $"{maxTemp} °C"
                 });
             }
 
             ApplyFilter();
         }
 
-        // Arama metnine ve tip süzgecine uyan reçeteleri listeye koyar; açık reçete listede kalıyorsa seçili gösterir.
+        // Süzgece uyan reçeteleri tipe göre gruplar; grup içinde önce sabitlenenler, sonra seçilen sıralama gelir.
         private void ApplyFilter()
         {
             string search = (SearchText ?? string.Empty).Trim();
+            bool byTemp = SortMode == SortByTemp;
 
             var visible = _allRecipes
                 .Where(r => TypeFilter == 0 || r.RecipeType == TypeFilter)
                 .Where(r => search.Length == 0 || r.Name.Contains(search, StringComparison.CurrentCultureIgnoreCase))
+                .OrderBy(r => r.RecipeType)
+                .ThenByDescending(r => r.IsPinned)
+                .ThenBy(r => byTemp ? r.MaxTemp : 0)
+                .ThenBy(r => r.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
 
             _loading = true;
             Recipes.Clear();
             foreach (var item in visible)
+            {
+                item.ShowTemp = byTemp;
                 Recipes.Add(item);
+            }
             SelectedRecipe = _editId > 0 ? Recipes.FirstOrDefault(r => r.Id == _editId) : null;
             _loading = false;
+        }
+
+        // Reçetenin sabitleme işaretini sunucuda değiştirir ve listeyi yeniler.
+        private async Task TogglePinAsync(RecipeListItem? item)
+        {
+            if (item == null)
+                return;
+
+            var result = await _api.PutAsync<JsonElement>($"api/recipes/{item.Id}/pin?pinned={(!item.IsPinned).ToString().ToLowerInvariant()}");
+            if (!result.IsSuccess)
+            {
+                ShowMessage(result.Message ?? "Sabitleme değiştirilemedi.", "Bad");
+                return;
+            }
+
+            await LoadListAsync();
         }
 
         // Seçilen reçeteyi adımlarıyla sunucudan alıp düzenleme alanına yükler.
@@ -332,7 +391,7 @@ namespace DesktopUI.ViewModels
             RefreshCommands();
         }
 
-        // Vakum, ısıtma ve soğutma adımlı boş bir nitrasyon reçetesiyle düzenlemeyi açar.
+        // Vakum (200 mbar, 20 dk), ısıtma ve soğutma adımlı boş bir nitrasyon reçetesiyle düzenlemeyi açar.
         private void NewRecipe()
         {
             var recipe = new Recipe
@@ -341,9 +400,9 @@ namespace DesktopUI.ViewModels
                 RecipeType = 2,
                 Steps = new List<RecipeStep>
                 {
-                    new RecipeStep { StepNo = 1, StepType = 1, Vac_SetPoint = 100, Vac_Timeout = 30 },
-                    new RecipeStep { StepNo = 2, StepType = 2, TargetTemp = 500, StepTime = 60, FanSpeed = DefaultFanSpeed },
-                    new RecipeStep { StepNo = 3, StepType = 3, TargetTemp = 150, FanSpeed = DefaultFanSpeed }
+                    new RecipeStep { StepNo = 1, StepType = 1, Vac_SetPoint = RecipeStepRow.DefaultVacSetPoint, Vac_Timeout = RecipeStepRow.DefaultVacTimeout },
+                    new RecipeStep { StepNo = 2, StepType = 2, TargetTemp = 500, StepTime = 60, FanSpeed = RecipeStepRow.DefaultFanSpeed },
+                    new RecipeStep { StepNo = 3, StepType = 3, TargetTemp = 150, FanSpeed = RecipeStepRow.DefaultFanSpeed }
                 }
             };
 
@@ -449,23 +508,28 @@ namespace DesktopUI.ViewModels
                 result.IsSuccess ? "Ok" : "Bad");
         }
 
-        // Onay alıp reçeteyi PLC'ye yazar ve programı başlatır; başlarsa ana ekrana döner.
+        // Şarj ağırlığını ve notu sorar, reçeteyi PLC'ye yazıp programı başlatır; başlarsa ana ekrana döner.
         private async Task StartAsync()
         {
-            var answer = MessageBox.Show($"'{Name}' reçetesiyle program başlatılacak.\n\nBaşlatmak istiyor musunuz?", "Programı başlat",
-                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
-            if (answer != MessageBoxResult.Yes)
+            var dialog = new StartDialog(Name)
+            {
+                Owner = Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+            };
+
+            if (dialog.ShowDialog() != true)
                 return;
 
-            var result = await _api.PostAsync<ScadaCommandResult>($"api/recipes/{_editId}/start");
+            var request = new StartRequestDto { LoadKg = dialog.LoadKg, Note = dialog.Note };
+            var result = await _api.PostAsync<ScadaCommandResult>($"api/recipes/{_editId}/start", request);
             if (!result.IsSuccess)
             {
                 ShowMessage(result.Message ?? "Program başlatılamadı.", "Bad");
                 return;
             }
 
-            // PLC başlatmayı uyarıyla kabul ettiyse (örneğin fırın sıcak) operatör görmeden sayfa değişmemeli.
-            if (result.Data != null && result.Data.HasWarning)
+            // PLC uyarıyla kabul ettiyse (örneğin fırın sıcak) ya da şarj bilgisi yazılamadıysa operatör görmeden sayfa değişmemeli.
+            bool infoProblem = (result.Message ?? string.Empty).Contains("kaydedilemedi");
+            if ((result.Data != null && result.Data.HasWarning) || infoProblem)
                 MessageBox.Show(result.Message ?? "Program uyarıyla başladı.", "Program başladı", MessageBoxButton.OK, MessageBoxImage.Warning);
 
             NavigateRequested?.Invoke("overview");
@@ -474,7 +538,7 @@ namespace DesktopUI.ViewModels
         // Soğutma adımından önce (yoksa sona) fanı %100 olan yeni bir ısıtma adımı ekler.
         private void AddStep()
         {
-            var step = new RecipeStep { StepType = 2, TargetTemp = 500, StepTime = 60, FanSpeed = DefaultFanSpeed };
+            var step = new RecipeStep { StepType = 2, TargetTemp = 500, StepTime = 60, FanSpeed = RecipeStepRow.DefaultFanSpeed };
             var row = RecipeStepRow.FromEntity(step, RecipeType, MarkDirty);
 
             int index = Steps.Count > 0 && Steps[^1].IsCooling ? Steps.Count - 1 : Steps.Count;
@@ -555,7 +619,7 @@ namespace DesktopUI.ViewModels
             RefreshCommands();
         }
 
-        // Düzenleme alanındaki adımlardan teorik eğriyi ve adım bölgelerini hesaplayıp grafiği günceller.
+        // Düzenleme alanındaki adımlardan teorik eğriyi, adım bölgelerini ve adım noktalarını hesaplayıp grafiği günceller.
         private void UpdatePreview()
         {
             var recipe = BuildRecipe();
@@ -586,15 +650,15 @@ namespace DesktopUI.ViewModels
             if (heatStart > 0)
                 data.Theory.Add(new List<Point> { new Point(0, PreviewStartTemp), new Point(heatStart, PreviewStartTemp) });
 
+            // Her ısıtma adımı bir bölge; adımın bittiği nokta sıcaklığıyla işaretlenir.
+            data.Markers.Add(new ProfileMarker { X = heatStart, Y = points[0].Temp, Label = $"{points[0].Temp:0} °C" });
             for (int i = 1; i < points.Count; i++)
             {
-                data.Bands.Add(new ProfileBand
-                {
-                    X1 = heatStart + points[i - 1].Minute / 60.0,
-                    X2 = heatStart + points[i].Minute / 60.0,
-                    Label = $"{points[i].StepNo} · {points[i].Temp:0} °C",
-                    Kind = 2
-                });
+                double x1 = heatStart + points[i - 1].Minute / 60.0;
+                double x2 = heatStart + points[i].Minute / 60.0;
+
+                data.Bands.Add(new ProfileBand { X1 = x1, X2 = x2, Label = points[i].StepNo.ToString(), Kind = 2 });
+                data.Markers.Add(new ProfileMarker { X = x2, Y = points[i].Temp, Label = $"{points[i].Temp:0} °C" });
             }
             data.Theory.Add(points.Select(p => new Point(heatStart + p.Minute / 60.0, p.Temp)).ToList());
 
@@ -605,17 +669,21 @@ namespace DesktopUI.ViewModels
             if (cooling != null)
             {
                 end = heatEnd + unit * 2;
-                data.Bands.Add(new ProfileBand { X1 = heatEnd, X2 = end, Label = $"{cooling.StepNo} · {cooling.TargetTemp} °C", Kind = 3 });
+                data.Bands.Add(new ProfileBand { X1 = heatEnd, X2 = end, Label = cooling.StepNo.ToString(), Kind = 3 });
                 data.Theory.Add(new List<Point> { new Point(heatEnd, points[^1].Temp), new Point(end, cooling.TargetTemp) });
+                data.Markers.Add(new ProfileMarker { X = end, Y = cooling.TargetTemp, Label = $"{cooling.TargetTemp} °C" });
             }
 
             data.TickStart = heatStart;
             data.TickEnd = heatEnd;
             data.XMax = end;
-            data.YMax = Math.Max(150, Math.Ceiling(points.Max(p => p.Temp) / 150.0) * 150);
+
+            // Üstteki sıcaklık yazılarına yer kalsın diye eksen en yüksek sıcaklığın biraz üstünde biter.
+            double maxTemp = points.Max(p => p.Temp);
+            data.YMax = Math.Max(150, Math.Ceiling(maxTemp * 1.15 / 150.0) * 150);
 
             ChartData = data;
-            ProfileNote = $"Isıtma toplamı {StatusTexts.FormatMinutes((int)points[^1].Minute)} (saat:dk). Vakum ve soğutma bölgelerinin genişliği süreyi göstermez.";
+            ProfileNote = $"Isıtma toplamı {StatusTexts.FormatMinutes((int)points[^1].Minute)} (saat:dk). Üstteki numaralar adım numarasıdır; vakum ve soğutma bölgelerinin genişliği süreyi göstermez.";
         }
 
         // Başlık alanını günceller ve değiştiyse reçeteyi değişmiş sayar.
@@ -669,15 +737,15 @@ namespace DesktopUI.ViewModels
             StartCommand.NotifyCanExecuteChanged();
         }
 
-        // Reçete tipini metne çevirir.
-        private static string DescribeType(int recipeType)
+        // Reçete tipinin liste başlığını döner.
+        private static string DescribeGroup(int recipeType)
         {
             return recipeType switch
             {
-                1 => "Meneviş",
-                2 => "Nitrasyon",
-                3 => "Oksidasyon",
-                _ => "Tip bilinmiyor"
+                1 => "MENEVİŞLER",
+                2 => "NİTRASYONLAR",
+                3 => "OKSİDASYONLAR",
+                _ => "DİĞER"
             };
         }
     }

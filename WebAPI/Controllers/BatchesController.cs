@@ -1,7 +1,13 @@
 ﻿using Business.Abstract;
+using Core.Constants;
+using Core.Extensions;
+using Core.Utilities.Results;
+using Entities.Dtos;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace WebAPI.Controllers
@@ -14,11 +20,13 @@ namespace WebAPI.Controllers
         private const int DefaultRangeDays = 30;
 
         private readonly IBatchService _batchService;
+        private readonly IBatchInfoService _batchInfoService;
 
-        // Şarj servis bağımlılığını alır.
-        public BatchesController(IBatchService batchService)
+        // Şarj ve şarj bilgisi servis bağımlılıklarını alır.
+        public BatchesController(IBatchService batchService, IBatchInfoService batchInfoService)
         {
             _batchService = batchService;
+            _batchInfoService = batchInfoService;
         }
 
         // Verilen tarih aralığında başlayan şarjları listeler; aralık verilmezse son 30 günü getirir.
@@ -40,6 +48,53 @@ namespace WebAPI.Controllers
             var result = await _batchService.GetBatchDetailAsync(id);
             if (result.IsSuccess) return Ok(result);
             return BadRequest(result);
+        }
+
+        // Şarjın operatör tarafından girilen ağırlığını ve notlarını getirir.
+        [HttpGet("{id:int}/info")]
+        public async Task<IActionResult> GetInfo(int id)
+        {
+            var result = await _batchInfoService.GetInfoAsync(id);
+            if (result.IsSuccess) return Ok(result);
+            return BadRequest(result);
+        }
+
+        // Şarj ağırlığını yazar ya da düzeltir (çalışan ya da geçmiş şarjda); Plc.Operate ya da Admin yetkisi gerekir.
+        [HttpPut("{id:int}/load")]
+        public async Task<IActionResult> SetLoad(int id, [FromQuery] float? kg)
+        {
+            if (!CanOperate())
+                return Forbidden();
+
+            var result = await _batchInfoService.SetLoadAsync(id, kg);
+            if (result.IsSuccess) return Ok(result);
+            return BadRequest(result);
+        }
+
+        // Şarja not ekler (çalışan ya da geçmiş şarjda); Plc.Operate ya da Admin yetkisi gerekir.
+        [HttpPost("{id:int}/notes")]
+        public async Task<IActionResult> AddNote(int id, [FromBody] BatchNoteRequestDto request)
+        {
+            if (!CanOperate())
+                return Forbidden();
+
+            var result = await _batchInfoService.AddNoteAsync(id, User.GetUserId(), request.Text);
+            if (result.IsSuccess) return Ok(result);
+            return BadRequest(result);
+        }
+
+        // Kullanıcının şarj bilgilerini değiştirme yetkisi olup olmadığını döner.
+        private bool CanOperate()
+        {
+            var roles = User.ClaimRoles();
+            return roles.Contains(PlcPermissions.Admin) || roles.Contains(PlcPermissions.Operate);
+        }
+
+        // Yetkisiz erişim cevabını üretir.
+        private IActionResult Forbidden()
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new ErrorResult($"YETKİSİZ ERİŞİM: Bu işlem için '{PlcPermissions.Operate}' yetkisi gereklidir."));
         }
     }
 }

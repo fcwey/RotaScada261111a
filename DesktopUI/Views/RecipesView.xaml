@@ -6,13 +6,22 @@
 
     <UserControl.Resources>
 
-        <!-- Adım tipi renkleri: grafikteki bölgelerle aynı -->
+        <!-- Liste tipe göre gruplanır; sıralamayı görünüm modeli yapar -->
+        <CollectionViewSource x:Key="RecipeGroups" Source="{Binding Recipes}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="GroupName" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+
+        <!-- Reçete tipi renkleri: meneviş yeşil, nitrasyon mavi, oksidasyon gri -->
+        <SolidColorBrush x:Key="TemperingBrush" Color="#7BC96F" />
+        <SolidColorBrush x:Key="NitridingBrush" Color="#4C8DF6" />
+        <SolidColorBrush x:Key="OxidationBrush" Color="#A9B4C4" />
+
+        <!-- Adım tipi renkleri: yalnızca satırdaki ince şeritte ve grafiğin üst şeridinde kullanılır -->
         <SolidColorBrush x:Key="VacuumBrush" Color="#5B8DEF" />
         <SolidColorBrush x:Key="HeatingBrush" Color="#FF9F45" />
         <SolidColorBrush x:Key="CoolingBrush" Color="#3CC8D9" />
-        <SolidColorBrush x:Key="VacuumBackBrush" Color="#151F38" />
-        <SolidColorBrush x:Key="HeatingBackBrush" Color="#261C12" />
-        <SolidColorBrush x:Key="CoolingBackBrush" Color="#10252B" />
 
         <Style x:Key="Panel" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource PanelBrush}" />
@@ -55,22 +64,6 @@
             <Setter Property="Margin" Value="3,0" />
         </Style>
 
-        <!-- Adım satırının zemini: adım tipine göre renk tonu -->
-        <Style x:Key="StepRow" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource CardBrush}" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding StepType}" Value="1">
-                    <Setter Property="Background" Value="{StaticResource VacuumBackBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding StepType}" Value="2">
-                    <Setter Property="Background" Value="{StaticResource HeatingBackBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding StepType}" Value="3">
-                    <Setter Property="Background" Value="{StaticResource CoolingBackBrush}" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
         <!-- Adım satırının solundaki renk şeridi -->
         <Style x:Key="StepStripe" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource IdleBrush}" />
@@ -87,17 +80,72 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Reçete listesi satırı -->
+        <!-- Reçete tipinin renk noktası -->
+        <Style x:Key="TypeDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="10" />
+            <Setter Property="Fill" Value="{StaticResource IdleBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RecipeType}" Value="1">
+                    <Setter Property="Fill" Value="{StaticResource TemperingBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RecipeType}" Value="2">
+                    <Setter Property="Fill" Value="{StaticResource NitridingBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RecipeType}" Value="3">
+                    <Setter Property="Fill" Value="{StaticResource OxidationBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Sabitleme düğmesi: çerçevesiz, yalnızca iğne simgesi -->
+        <Style x:Key="PinButton" TargetType="Button">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back" CornerRadius="5" Background="Transparent">
+                            <Path x:Name="Pin" Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Data="M6,1.5 H10 L9.5,6 L12,8.5 H4 L6.5,6 Z M8,8.5 V14.5"
+                                  Stroke="{StaticResource IdleBrush}" StrokeThickness="1.4" StrokeLineJoin="Round" Fill="Transparent" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="{StaticResource ButtonBrush}" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsPinned}" Value="True">
+                                <Setter TargetName="Pin" Property="Stroke" Value="{StaticResource WarnBrush}" />
+                                <Setter TargetName="Pin" Property="Fill" Value="{StaticResource WarnBrush}" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Reçete listesi satırı: renk noktası, ad, sıcaklık etiketi, sabitleme düğmesi -->
         <Style x:Key="RecipeItem" TargetType="ListBoxItem">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Back" Margin="0,2" Padding="12,9" CornerRadius="6" Background="Transparent">
-                            <StackPanel>
-                                <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Text="{Binding Info}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
-                            </StackPanel>
+                        <Border x:Name="Back" Margin="0,2" Padding="10,8,4,8" CornerRadius="6" Background="Transparent">
+                            <DockPanel>
+                                <Ellipse DockPanel.Dock="Left" Style="{StaticResource TypeDot}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <Button DockPanel.Dock="Right" Style="{StaticResource PinButton}" ToolTip="{Binding PinTip}"
+                                        Command="{Binding DataContext.TogglePinCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}" />
+                                <Border DockPanel.Dock="Right" CornerRadius="4" Padding="7,2" Margin="6,0,2,0" VerticalAlignment="Center"
+                                        Background="#3A2408" Visibility="{Binding ShowTemp, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding TempText}" Foreground="#FFB877" FontSize="12" FontWeight="SemiBold" />
+                                </Border>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Info}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </DockPanel>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -116,7 +164,7 @@
 
     <Grid>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="320" />
+            <ColumnDefinition Width="340" />
             <ColumnDefinition Width="16" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
@@ -126,9 +174,12 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="REÇETELER" Style="{StaticResource PanelTitle}" Margin="6,0,0,10" />
 
-                <!-- Süzgeç: tip ve ada göre arama -->
+                <!-- Süzgeç ve sıralama -->
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8" IsEnabled="{Binding IsListEnabled}">
-                    <ComboBox ItemsSource="{Binding TypeFilters}" DisplayMemberPath="Text" SelectedValuePath="Value" SelectedValue="{Binding TypeFilter}" />
+                    <UniformGrid Columns="2">
+                        <ComboBox Margin="0,0,4,0" ItemsSource="{Binding TypeFilters}" DisplayMemberPath="Text" SelectedValuePath="Value" SelectedValue="{Binding TypeFilter}" />
+                        <ComboBox Margin="4,0,0,0" ItemsSource="{Binding SortModes}" DisplayMemberPath="Text" SelectedValuePath="Value" SelectedValue="{Binding SortMode}" />
+                    </UniformGrid>
                     <TextBlock Text="Ada göre ara" Style="{StaticResource LabelText}" Margin="2,8,0,4" />
                     <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" FontSize="14" Padding="8,6" />
                 </StackPanel>
@@ -144,11 +195,28 @@
                            Visibility="{Binding IsDirty, Converter={StaticResource BoolToVis}}" />
 
                 <!-- Liste soluklaşmaz; değişiklik varken yalnızca tıklanamaz -->
-                <ListBox ItemsSource="{Binding Recipes}" SelectedItem="{Binding SelectedRecipe}"
+                <ListBox ItemsSource="{Binding Source={StaticResource RecipeGroups}}" SelectedItem="{Binding SelectedRecipe}"
+                         IsSynchronizedWithCurrentItem="False"
                          IsHitTestVisible="{Binding IsListEnabled}" Focusable="False"
                          ItemContainerStyle="{StaticResource RecipeItem}"
                          Background="Transparent" BorderThickness="0"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Margin="4,12,4,4" Padding="2,0,0,5">
+                                        <TextBlock Foreground="{StaticResource SoftTextBrush}" FontSize="12" FontWeight="SemiBold">
+                                            <Run Text="{Binding Name, Mode=OneWay}" />
+                                            <Run Text="  " />
+                                            <Run Text="{Binding ItemCount, Mode=OneWay}" Foreground="{StaticResource MutedBrush}" />
+                                        </TextBlock>
+                                    </Border>
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ListBox.GroupStyle>
+                </ListBox>
             </DockPanel>
         </Border>
 
@@ -191,16 +259,16 @@
                 </DockPanel>
 
                 <!-- Teorik sıcaklık eğrisi: yazdıkça güncellenir -->
-                <Border DockPanel.Dock="Bottom" Height="270" Margin="0,14,0,0" Padding="14,10" CornerRadius="6" Background="{StaticResource CardBrush}">
+                <Border DockPanel.Dock="Bottom" Height="290" Margin="0,14,0,0" Padding="14,10" CornerRadius="6" Background="{StaticResource CardBrush}">
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,6">
                             <TextBlock Text="TEORİK SICAKLIK EĞRİSİ" Style="{StaticResource PanelTitle}" FontSize="12" />
                             <TextBlock DockPanel.Dock="Right" Text="Soğutma" Style="{StaticResource LabelText}" Margin="6,0,0,0" />
-                            <Rectangle DockPanel.Dock="Right" Width="12" Height="12" RadiusX="2" RadiusY="2" Fill="{StaticResource CoolingBrush}" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="14" Height="3" Fill="{StaticResource CoolingBrush}" VerticalAlignment="Center" />
                             <TextBlock DockPanel.Dock="Right" Text="Isıtma" Style="{StaticResource LabelText}" Margin="6,0,14,0" />
-                            <Rectangle DockPanel.Dock="Right" Width="12" Height="12" RadiusX="2" RadiusY="2" Fill="{StaticResource HeatingBrush}" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="14" Height="3" Fill="{StaticResource HeatingBrush}" VerticalAlignment="Center" />
                             <TextBlock DockPanel.Dock="Right" Text="Vakum" Style="{StaticResource LabelText}" Margin="6,0,14,0" />
-                            <Rectangle DockPanel.Dock="Right" Width="12" Height="12" RadiusX="2" RadiusY="2" Fill="{StaticResource VacuumBrush}" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="14" Height="3" Fill="{StaticResource VacuumBrush}" VerticalAlignment="Center" />
                         </DockPanel>
                         <TextBlock DockPanel.Dock="Bottom" Text="{Binding ProfileNote}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
                         <controls:ProfileChart Data="{Binding ChartData}" />
@@ -221,8 +289,8 @@
                             <TextBlock Text="Tip" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
                             <ComboBox ItemsSource="{Binding RecipeTypes}" DisplayMemberPath="Text" SelectedValuePath="Value" SelectedValue="{Binding RecipeType}" />
                         </StackPanel>
-                        <StackPanel Style="{StaticResource Field}" Width="120">
-                            <TextBlock Text="Basınç seti (mbar)" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                        <StackPanel Style="{StaticResource Field}" Width="200">
+                            <TextBlock Text="Basınç seti (mbar, atmosfer üstü)" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
                             <TextBox Text="{Binding PressureSetPoint}" TextAlignment="Right" />
                         </StackPanel>
                         <StackPanel Style="{StaticResource Field}" Width="150">
@@ -252,7 +320,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="46" />
                             <ColumnDefinition Width="124" />
-                            <ColumnDefinition Width="84" />
+                            <ColumnDefinition Width="92" />
                             <ColumnDefinition Width="84" />
                             <ColumnDefinition Width="84" />
                             <ColumnDefinition Width="84" />
@@ -268,7 +336,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="No" Style="{StaticResource Head}" />
                         <TextBlock Grid.Column="1" Text="Adım tipi" Style="{StaticResource Head}" />
-                        <TextBlock Grid.Column="2" Text="Vakum seti mbar" Style="{StaticResource Head}" />
+                        <TextBlock Grid.Column="2" Text="Vakum seti mbar mutlak" Style="{StaticResource Head}" />
                         <TextBlock Grid.Column="3" Text="Zaman aşımı dk" Style="{StaticResource Head}" />
                         <TextBlock Grid.Column="4" Text="Sıcaklık °C" Style="{StaticResource Head}" />
                         <TextBlock Grid.Column="5" Text="Süre dk" Style="{StaticResource Head}" />
@@ -284,17 +352,17 @@
 
                     <Button DockPanel.Dock="Bottom" Content="Adım Ekle" Command="{Binding AddStepCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" />
 
-                    <!-- Adım satırları -->
+                    <!-- Adım satırları: tek renk zemin, tip yalnızca soldaki şeritte -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding Steps}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Height="42" Margin="0,0,0,3" CornerRadius="5" Style="{StaticResource StepRow}">
+                                    <Border Height="42" Margin="0,0,0,3" CornerRadius="5" Background="{StaticResource CardBrush}">
                                         <Grid>
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="46" />
                                                 <ColumnDefinition Width="124" />
-                                                <ColumnDefinition Width="84" />
+                                                <ColumnDefinition Width="92" />
                                                 <ColumnDefinition Width="84" />
                                                 <ColumnDefinition Width="84" />
                                                 <ColumnDefinition Width="84" />
@@ -309,8 +377,8 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
 
-                                            <Border Grid.Column="0" Width="6" CornerRadius="5,0,0,5" HorizontalAlignment="Left" Style="{StaticResource StepStripe}" />
-                                            <TextBlock Grid.Column="0" Text="{Binding StepNo}" FontSize="15" FontWeight="Bold" Margin="6,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            <Border Grid.Column="0" Width="5" CornerRadius="5,0,0,5" HorizontalAlignment="Left" Style="{StaticResource StepStripe}" />
+                                            <TextBlock Grid.Column="0" Text="{Binding StepNo}" FontSize="15" FontWeight="Bold" Margin="5,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             <ComboBox Grid.Column="1" Margin="3,0" Height="32" VerticalAlignment="Center"
                                                       ItemsSource="{Binding DataContext.StepTypes, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                       DisplayMemberPath="Text" SelectedValuePath="Value" SelectedValue="{Binding StepType}" />
