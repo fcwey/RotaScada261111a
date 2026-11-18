@@ -65,12 +65,12 @@ namespace DesktopUI.ViewModels
         }
     }
 
-    // Program sayfası: çalışan reçete, çalışırken değişiklik, adıma atlama, grafik ve şarj bilgisi
+    // Program sayfası: çalışan reçete, çalışırken değişiklik, grafikten adıma atlama ve şarj bilgisi
     public class ProgramViewModel : ObservableObject, IDisposable
     {
         private const int MaxSteps = 20;
-        private const int ChartRefreshSeconds = 60;
         private const float MaxLoadKg = 100000f;
+        private const float TimelineStartTemp = 20f;
         private static readonly CultureInfo Tr = new CultureInfo("tr-TR");
 
         private readonly ApiClient _api;
@@ -81,23 +81,26 @@ namespace DesktopUI.ViewModels
         private readonly bool _canOperate;
 
         private Recipe? _recipe;
+        private RecipeTimeline? _timeline;
         private DateTime _lastDataAt = DateTime.MinValue;
         private bool _plcOk;
         private bool _isLive;
         private short _seqState;
         private int _activeStep;
         private int _stepElapsed;
+        private float _tempPota;
         private int _batchId;
-        private int _chartAge;
         private bool _loadingRecipe;
+        private bool _syncingTarget;
 
         private bool _hasProgram;
         private bool _isDirty;
         private string _title = string.Empty;
         private string _message = string.Empty;
         private string _messageLevel = "Info";
-        private string _chartNote = string.Empty;
         private ProfileChartData? _chartData;
+        private double _targetX = -1;
+        private string _targetText = string.Empty;
         private Option? _selectedGotoStep;
         private string _gotoMinuteText = "0";
         private string _batchCode = string.Empty;
@@ -119,6 +122,7 @@ namespace DesktopUI.ViewModels
         public IRelayCommand AddStepCommand { get; }
         public IRelayCommand<ProgramStepRow> RemoveStepCommand { get; }
         public IAsyncRelayCommand GotoCommand { get; }
+        public IRelayCommand ClearTargetCommand { get; }
         public IAsyncRelayCommand SaveLoadCommand { get; }
         public IAsyncRelayCommand AddNoteCommand { get; }
 
@@ -126,8 +130,8 @@ namespace DesktopUI.ViewModels
         public string Title { get => _title; private set => SetProperty(ref _title, value); }
         public string Message { get => _message; private set => SetProperty(ref _message, value); }
         public string MessageLevel { get => _messageLevel; private set => SetProperty(ref _messageLevel, value); }     // Info, Ok, Bad
-        public string ChartNote { get => _chartNote; private set => SetProperty(ref _chartNote, value); }
         public ProfileChartData? ChartData { get => _chartData; private set => SetProperty(ref _chartData, value); }
+        public string TargetText { get => _targetText; private set => SetProperty(ref _targetText, value); }
         public string BatchCode { get => _batchCode; private set => SetProperty(ref _batchCode, value); }
         public string InfoMessage { get => _infoMessage; private set => SetProperty(ref _infoMessage, value); }
 
@@ -141,17 +145,59 @@ namespace DesktopUI.ViewModels
             }
         }
 
+        // Adıma atlama yalnızca ısıtma ya da soğutmada, kaydedilmemiş değişiklik yokken yapılabilir.
+        public bool CanDragTarget => _isLive && _canEdit && !IsDirty && _seqState is 30 or 50;
+
+        // Grafikte sürüklenen hedef çizgisinin konumu; gidilebilecek bir yere çekilir, adım ve dakika kutularını günceller.
+        public double TargetX
+        {
+            get => _targetX;
+            set
+            {
+                if (_timeline == null || value < 0)
+                {
+                    SetTarget(-1);
+                    return;
+                }
+
+                double snapped = _timeline.Snap(value);
+                SetTarget(snapped);
+
+                if (snapped < 0)
+                    return;
+
+                var located = _timeline.Locate(snapped);
+
+                _syncingTarget = true;
+                SelectedGotoStep = GotoSteps.FirstOrDefault(o => o.Value == located.StepNo);
+                GotoMinuteText = located.Minute.ToString();
+                _syncingTarget = false;
+            }
+        }
+
         public Option? SelectedGotoStep
         {
             get => _selectedGotoStep;
             set
             {
-                if (SetProperty(ref _selectedGotoStep, value))
-                    GotoCommand.NotifyCanExecuteChanged();
+                if (!SetProperty(ref _selectedGotoStep, value))
+                    return;
+
+                GotoCommand.NotifyCanExecuteChanged();
+                UpdateTargetFromInputs();
             }
         }
 
-        public string GotoMinuteText { get => _gotoMinuteText; set => SetProperty(ref _gotoMinuteText, value); }
+        public string GotoMinuteText
+        {
+            get => _gotoMinuteText;
+            set
+            {
+                if (SetProperty(ref _gotoMinuteText, value))
+                    UpdateTargetFromInputs();
+            }
+        }
+
         public string LoadKgText { get => _loadKgText; set => SetProperty(ref _loadKgText, value); }
 
         public string NewNote
@@ -180,7 +226,8 @@ namespace DesktopUI.ViewModels
             RevertCommand = new AsyncRelayCommand(LoadRecipeAsync, () => IsDirty);
             AddStepCommand = new RelayCommand(AddStep, CanAddStep);
             RemoveStepCommand = new RelayCommand<ProgramStepRow>(RemoveStep);
-            GotoCommand = new AsyncRelayCommand(GotoAsync, () => _isLive && _canEdit && !IsDirty && SelectedGotoStep != null && _seqState is 30 or 50);
+            GotoCommand = new AsyncRelayCommand(GotoAsync, () => CanDragTarget && SelectedGotoStep != null);
+            ClearTargetCommand = new RelayCommand(ClearTarget);
             SaveLoadCommand = new AsyncRelayCommand(SaveLoadAsync, () => _canOperate && _batchId > 0);
             AddNoteCommand = new AsyncRelayCommand(AddNoteAsync, () => _canOperate && _batchId > 0 && !string.IsNullOrWhiteSpace(NewNote));
 
@@ -188,7 +235,7 @@ namespace DesktopUI.ViewModels
             _live.ProfileChanged += OnProfileChanged;
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _timer.Tick += (_, _) => OnTick();
+            _timer.Tick += (_, _) => UpdateLive();
             _timer.Start();
         }
 
@@ -200,7 +247,7 @@ namespace DesktopUI.ViewModels
             _live.ProfileChanged -= OnProfileChanged;
         }
 
-        // Canlı veriden sekans durumunu, çalışan adımı ve şarj numarasını izler; şarj değişince sayfayı yeniden yükler.
+        // Canlı veriden sekans durumunu, çalışan adımı ve sıcaklığı izler; grafikteki yeri günceller, şarj değişince sayfayı yeniden yükler.
         private void OnDataReceived(ScadaLiveDto data)
         {
             _lastDataAt = DateTime.Now;
@@ -216,8 +263,10 @@ namespace DesktopUI.ViewModels
             _seqState = status.SeqState;
             _activeStep = status.ActiveStep;
             _stepElapsed = status.StepElapsedMin;
+            _tempPota = status.TempPota;
 
             UpdateRowStates();
+            RefreshChart();
 
             if (seqChanged)
                 RefreshCommands();
@@ -229,25 +278,10 @@ namespace DesktopUI.ViewModels
             }
         }
 
-        // Her saniye verinin tazeliğini denetler, belirli aralıkla grafiği yeniler.
-        private void OnTick()
-        {
-            UpdateLive();
-
-            _chartAge++;
-            if (_chartAge >= ChartRefreshSeconds && _batchId > 0)
-                _ = LoadChartAsync();
-        }
-
-        // Plan değişince (değişiklik, adıma atlama, soğutmaya geçiş) grafiği ve düzenlenmiyorsa reçeteyi yeniler.
+        // Plan başka bir ekrandan değişince, düzenleme yapılmıyorsa çalışan reçeteyi yeniden okur.
         private void OnProfileChanged()
         {
-            if (_batchId <= 0)
-                return;
-
-            _ = LoadChartAsync();
-
-            if (!IsDirty)
+            if (_batchId > 0 && !IsDirty)
                 _ = LoadRecipeAsync();
         }
 
@@ -264,24 +298,25 @@ namespace DesktopUI.ViewModels
             }
         }
 
-        // Şarj açıksa reçeteyi, grafiği ve şarj bilgisini yükler; değilse sayfayı boşaltır.
+        // Şarj açıksa reçeteyi ve şarj bilgisini yükler; değilse sayfayı boşaltır.
         private async Task ReloadAllAsync()
         {
             if (_batchId <= 0)
             {
                 HasProgram = false;
                 _recipe = null;
+                _timeline = null;
                 Steps.Clear();
                 GotoSteps.Clear();
                 Notes.Clear();
                 ChartData = null;
+                SetTarget(-1);
                 IsDirty = false;
                 return;
             }
 
             HasProgram = true;
             await LoadRecipeAsync();
-            await LoadChartAsync();
             await LoadInfoAsync();
         }
 
@@ -307,7 +342,7 @@ namespace DesktopUI.ViewModels
             Title = $"{_recipe.RecipeName} · {DescribeType(_recipe.RecipeType)} · basınç seti {_recipe.PressureSetPoint} mbar";
             IsDirty = false;
             UpdateRowStates();
-            RebuildGotoSteps();
+            RebuildTimeline();
             RefreshCommands();
         }
 
@@ -318,19 +353,84 @@ namespace DesktopUI.ViewModels
                 row.SetState(_activeStep, _stepElapsed, ProgramRunning);
         }
 
-        // Atlanabilecek adımları (ısıtma ve soğutma) açılır listeye koyar.
-        private void RebuildGotoSteps()
+        // Adım tablosundan zaman çizgisini yeniden kurar, atlanabilecek adımları listeler ve seçili hedefi kaldırır.
+        private void RebuildTimeline()
         {
-            int? selected = SelectedGotoStep?.Value;
+            if (_recipe == null)
+                return;
 
+            _timeline = RecipeTimeline.Build(BuildRecipe(), TimelineStartTemp);
+
+            _syncingTarget = true;
             GotoSteps.Clear();
             foreach (var row in Steps.Where(r => !r.Step.IsVacuum))
             {
                 string kind = row.Step.IsHeating ? "Isıtma" : "Soğutma";
                 GotoSteps.Add(new Option(row.Step.StepNo, $"Adım {row.Step.StepNo} · {kind} · {row.Step.TargetTemp} °C"));
             }
+            SelectedGotoStep = null;
+            _syncingTarget = false;
 
-            SelectedGotoStep = GotoSteps.FirstOrDefault(o => o.Value == selected);
+            SetTarget(-1);
+            RefreshChart();
+        }
+
+        // Grafiği zaman çizgisinden üretir; program yürüyorsa şu anki yeri ve ölçülen sıcaklığı işaretler.
+        private void RefreshChart()
+        {
+            if (_timeline == null)
+            {
+                ChartData = null;
+                return;
+            }
+
+            var data = _timeline.ToChartData();
+
+            if (ProgramRunning)
+            {
+                double nowX = _timeline.GetPositionX(_activeStep, _stepElapsed, _tempPota);
+                if (nowX >= 0)
+                {
+                    data.NowX = nowX;
+                    data.Actual = new List<Point> { new Point(nowX, _tempPota) };
+                }
+            }
+
+            ChartData = data;
+        }
+
+        // Hedef çizgisinin konumunu ve yanındaki açıklamayı ayarlar; eksi değer hedefi kaldırır.
+        private void SetTarget(double x)
+        {
+            _targetX = x;
+            OnPropertyChanged(nameof(TargetX));
+            TargetText = x < 0 || _timeline == null ? string.Empty : _timeline.Describe(x);
+        }
+
+        // Adım ya da dakika kutusu elle değişince hedef çizgisini oraya taşır.
+        private void UpdateTargetFromInputs()
+        {
+            if (_syncingTarget || _timeline == null)
+                return;
+
+            if (SelectedGotoStep == null || !int.TryParse((GotoMinuteText ?? string.Empty).Trim(), out int minute) || minute < 0)
+            {
+                SetTarget(-1);
+                return;
+            }
+
+            SetTarget(_timeline.GetGotoX(SelectedGotoStep.Value, minute));
+        }
+
+        // Seçili hedefi ve adım seçimini kaldırır.
+        private void ClearTarget()
+        {
+            _syncingTarget = true;
+            SelectedGotoStep = null;
+            GotoMinuteText = "0";
+            _syncingTarget = false;
+
+            SetTarget(-1);
         }
 
         // Onay alıp değiştirilen reçeteyi PLC'ye gönderir; kabul edilirse çalışan reçeteyi yeniden okur.
@@ -353,7 +453,6 @@ namespace DesktopUI.ViewModels
             }
 
             await LoadRecipeAsync();
-            await LoadChartAsync();
             ShowMessage(result.Message ?? "Değişiklik uygulandı.", "Ok");
         }
 
@@ -443,96 +542,11 @@ namespace DesktopUI.ViewModels
                 return;
 
             var result = await _api.SendCommandAsync((int)ScadaCommandCode.GotoStep, SelectedGotoStep.Value, minute);
+
+            if (result.IsSuccess)
+                ClearTarget();
+
             ShowMessage(result.Message ?? (result.IsSuccess ? "Adıma atlandı." : "Adıma atlanamadı."), result.IsSuccess ? "Ok" : "Bad");
-        }
-
-        // Çalışan şarjın teorik eğrisini adım bölgeleriyle ve gerçekleşen pota sıcaklığını alıp grafiğe çevirir.
-        private async Task LoadChartAsync()
-        {
-            _chartAge = 0;
-            int batchId = _batchId;
-            if (batchId <= 0)
-                return;
-
-            var profileTask = _api.GetAsync<RecipeProfileDto>("api/profiles/active");
-            var trendTask = _api.GetAsync<TrendDataDto>($"api/trends/batch/{batchId}?tags=TempPota&points=600");
-            await Task.WhenAll(profileTask, trendTask);
-
-            if (batchId != _batchId)
-                return;
-
-            var profile = profileTask.Result.IsSuccess ? profileTask.Result.Data : null;
-            var trend = trendTask.Result.IsSuccess ? trendTask.Result.Data : null;
-            DateTime now = DateTime.Now;
-
-            // Teorik noktaların saatleri: ısıtma başlamadıysa eğri şu andan başlıyormuş gibi yerleştirilir.
-            var theory = new List<(int Segment, DateTime Time, float Temp, int StepNo)>();
-            if (profile != null)
-            {
-                DateTime baseTime = profile.HeatingStart ?? now;
-                foreach (var point in profile.Points)
-                    theory.Add((point.Segment, point.Timestamp ?? baseTime.AddMinutes(point.Minute), point.Temp, point.StepNo));
-            }
-
-            var actual = new List<(DateTime Time, float Temp)>();
-            var series = trend?.Series.FirstOrDefault();
-            if (trend != null && series != null)
-            {
-                int count = Math.Min(trend.Timestamps.Count, series.Values.Count);
-                for (int i = 0; i < count; i++)
-                    actual.Add((trend.Timestamps[i], series.Values[i]));
-            }
-
-            var allTimes = theory.Select(t => t.Time).Concat(actual.Select(a => a.Time)).ToList();
-            if (allTimes.Count == 0)
-            {
-                ChartData = null;
-                ChartNote = "Henüz ölçüm ve teorik eğri yok.";
-                return;
-            }
-
-            DateTime origin = allTimes.Min();
-            double Hours(DateTime time) => (time - origin).TotalHours;
-
-            var data = new ProfileChartData
-            {
-                Actual = actual.Select(a => new Point(Hours(a.Time), a.Temp)).ToList(),
-                NowX = Hours(now)
-            };
-
-            // Her eğri parçasında ardışık iki nokta bir adımdır: bölge, numara ve bitiş noktasının sıcaklığı.
-            foreach (var segment in theory.GroupBy(t => t.Segment))
-            {
-                var points = segment.ToList();
-                data.Theory.Add(points.Select(p => new Point(Hours(p.Time), p.Temp)).ToList());
-
-                for (int i = 0; i < points.Count; i++)
-                {
-                    data.Markers.Add(new ProfileMarker { X = Hours(points[i].Time), Y = points[i].Temp, Label = $"{points[i].Temp:0} °C" });
-
-                    if (i > 0)
-                    {
-                        data.Bands.Add(new ProfileBand
-                        {
-                            X1 = Hours(points[i - 1].Time),
-                            X2 = Hours(points[i].Time),
-                            Label = points[i].StepNo.ToString(),
-                            Kind = 2
-                        });
-                    }
-                }
-            }
-
-            double maxTemp = theory.Select(t => t.Temp).Concat(actual.Select(a => a.Temp)).DefaultIfEmpty(100).Max();
-            data.XMax = Math.Max(1, Math.Ceiling(Math.Max(Hours(allTimes.Max()), data.NowX)));
-            data.YMax = Math.Max(150, Math.Ceiling(maxTemp * 1.15 / 150.0) * 150);
-
-            ChartData = data;
-            ChartNote = profile == null
-                ? "Teorik eğri alınamadı."
-                : profile.IsAnchored
-                    ? $"Saat ekseni şarjın ilk ölçümünden başlar. Planlanan ısıtma bitişi: {profile.PlannedEnd:dd.MM HH:mm}."
-                    : "Isıtma henüz başlamadı; teorik eğri şu andan başlıyormuş gibi çizildi.";
         }
 
         // Çalışan şarjın ağırlığını ve notlarını sunucudan alır.
@@ -594,14 +608,15 @@ namespace DesktopUI.ViewModels
             await LoadInfoAsync();
         }
 
-        // Reçetenin kaydedilmemiş değişikliği olduğunu işaretler (yükleme sırasında işaretlemez).
+        // Reçetenin kaydedilmemiş değişikliği olduğunu işaretler ve eğriyi yeni plana göre çizer (yükleme sırasında çalışmaz).
         private void MarkDirty()
         {
             if (_loadingRecipe)
                 return;
 
             IsDirty = true;
-            ShowMessage("Değişiklik henüz PLC'ye gönderilmedi.", "Info");
+            RebuildTimeline();
+            ShowMessage("Değişiklik henüz PLC'ye gönderilmedi; grafik yeni planı gösteriyor.", "Info");
         }
 
         // Adım tablosunun altındaki sonuç mesajını ve rengini ayarlar.
@@ -611,7 +626,7 @@ namespace DesktopUI.ViewModels
             MessageLevel = level;
         }
 
-        // Düğmelerin etkin/pasif durumunu yeniden hesaplatır.
+        // Düğmelerin ve grafikteki sürüklemenin etkin/pasif durumunu yeniden hesaplatır.
         private void RefreshCommands()
         {
             ApplyCommand.NotifyCanExecuteChanged();
@@ -620,6 +635,7 @@ namespace DesktopUI.ViewModels
             GotoCommand.NotifyCanExecuteChanged();
             SaveLoadCommand.NotifyCanExecuteChanged();
             AddNoteCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(CanDragTarget));
         }
 
         // Reçete tipini metne çevirir.

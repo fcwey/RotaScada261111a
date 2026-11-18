@@ -79,7 +79,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Yalnızca Tag = On iken görünen parça (alev, malzeme sıcaklığı) -->
+        <!-- Yalnızca Tag = On iken görünen parça (alev, malzeme sıcaklığı, aktif adım paneli) -->
         <Style x:Key="OnlyWhenOn" TargetType="FrameworkElement">
             <Setter Property="Visibility" Value="Collapsed" />
             <Style.Triggers>
@@ -150,11 +150,11 @@
         <Style x:Key="Tile" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBrush}" />
             <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Padding" Value="14,10" />
-            <Setter Property="Margin" Value="6" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Margin" Value="6,5" />
         </Style>
         <Style x:Key="TileValue" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="32" />
+            <Setter Property="FontSize" Value="30" />
             <Setter Property="FontWeight" Value="Bold" />
         </Style>
 
@@ -465,7 +465,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="16" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="*" MinHeight="200" />
                     <RowDefinition Height="16" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
@@ -473,7 +473,7 @@
                 <!-- Program durumu -->
                 <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="12,14,12,16">
                     <StackPanel>
-                        <DockPanel Margin="6,0,6,8">
+                        <DockPanel Margin="6,0,6,6">
                             <TextBlock DockPanel.Dock="Right" Text="{Binding [StepInfo]}" Foreground="{StaticResource SoftTextBrush}" FontSize="13" TextTrimming="CharacterEllipsis" />
                             <TextBlock Text="PROGRAM DURUMU" Style="{StaticResource PanelTitle}" />
                         </DockPanel>
@@ -507,6 +507,31 @@
                                 </StackPanel>
                             </Border>
                         </UniformGrid>
+
+                        <!-- Aktif adımın reçetedeki değerleri: yalnızca program yürürken görünür -->
+                        <Border Margin="6,6,6,0" Padding="14,10,14,4" CornerRadius="6" Background="{StaticResource CardBrush}"
+                                BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                                Tag="{Binding [StepPanel]}" Style="{StaticResource OnlyWhenOn}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding [StepTitle]}" Foreground="{StaticResource AccentBrush}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <ItemsControl ItemsSource="{Binding ActiveStepItems}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,0,22,6">
+                                                <TextBlock Text="{Binding Label}" Style="{StaticResource LabelText}" FontSize="11" />
+                                                <TextBlock Text="{Binding Value}" FontSize="15" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
                         <DockPanel Margin="6,10,6,6">
                             <TextBlock DockPanel.Dock="Right" Text="{Binding [StepTime]}" FontSize="13" />
                             <TextBlock Text="Adım süresi" Foreground="{StaticResource MutedBrush}" FontSize="13" />
@@ -516,18 +541,20 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Sıcaklık profili -->
+                <!-- Program eğrisi -->
                 <Border Grid.Row="2" Style="{StaticResource Panel}" Padding="18,14">
                     <DockPanel>
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
-                            <TextBlock Text="SICAKLIK PROFİLİ" Style="{StaticResource PanelTitle}" />
-                            <TextBlock DockPanel.Dock="Right" Text="Gerçekleşen" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,0,0" />
-                            <Rectangle DockPanel.Dock="Right" Width="18" Height="3" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock DockPanel.Dock="Right" Text="Teorik" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,16,0" />
+                            <TextBlock Text="PROGRAM EĞRİSİ" Style="{StaticResource PanelTitle}" />
+                            <TextBlock DockPanel.Dock="Right" Text="Ölçülen" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,0,0" />
+                            <Ellipse DockPanel.Dock="Right" Width="10" Height="10" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="İlerleme" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,14,0" />
+                            <Rectangle DockPanel.Dock="Right" Width="18" Height="4" Fill="{StaticResource OkTextBrush}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="Plan" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,14,0" />
                             <Rectangle DockPanel.Dock="Right" Width="18" Height="2" VerticalAlignment="Center" Stroke="{StaticResource SoftTextBrush}" StrokeDashArray="2 1.5" />
                         </DockPanel>
-                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding [ChartNote]}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0" />
-                        <controls:ProfileChart Data="{Binding ChartData}" MinHeight="140" />
+                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding [ChartNote]}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                        <controls:ProfileChart Data="{Binding ChartData}" />
                     </DockPanel>
                 </Border>
 

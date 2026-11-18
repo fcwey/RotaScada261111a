@@ -4,6 +4,7 @@ using Core.Constants;
 using DesktopUI.Controls;
 using DesktopUI.Helpers;
 using DesktopUI.Services;
+using Entities.Concrete;
 using Entities.Dtos;
 using Entities.Enums;
 using Entities.Structures;
@@ -24,11 +25,18 @@ namespace DesktopUI.ViewModels
         public string Level { get; set; } = "Warn";     // Info, Warn, Bad
     }
 
-    // Ana ekran: fırın şeması, program durumu, sıcaklık profili, şarj toplamları, komutlar ve aktif alarmlar
+    // Aktif adım panelindeki bir değer: üstte ad, altta değer
+    public class StepItem
+    {
+        public string Label { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    // Ana ekran: fırın şeması, program durumu, aktif adım, program eğrisi, şarj toplamları, komutlar ve aktif alarmlar
     public class OverviewViewModel : ObservableObject, IDisposable
     {
-        private const int ChartRefreshSeconds = 60;
         private const int MaxAlarmRows = 3;
+        private const float TimelineStartTemp = 20f;
         private static readonly CultureInfo Tr = new CultureInfo("tr-TR");
 
         private readonly ApiClient _api;
@@ -38,6 +46,8 @@ namespace DesktopUI.ViewModels
         private readonly DispatcherTimer _timer;
         private readonly Dictionary<string, string> _values = new();
 
+        private Recipe? _recipe;
+        private RecipeTimeline? _timeline;
         private DateTime _lastDataAt = DateTime.MinValue;
         private bool _plcOk;
         private bool _isLive;
@@ -45,7 +55,10 @@ namespace DesktopUI.ViewModels
         private short _holdReason;
         private bool _canStart;
         private int _batchId;
-        private int _chartAge;
+        private int _activeStep;
+        private int _stepElapsed;
+        private float _tempPota;
+        private int _shownStepNo = -1;
         private double _stepProgress;
         private ProfileChartData? _chartData;
 
@@ -53,6 +66,7 @@ namespace DesktopUI.ViewModels
         public event Action<string>? NavigateRequested;
 
         public ObservableCollection<AlarmRow> Alarms { get; } = new();
+        public ObservableCollection<StepItem> ActiveStepItems { get; } = new();
 
         public IRelayCommand StartCommand { get; }
         public IAsyncRelayCommand HoldCommand { get; }
@@ -67,6 +81,9 @@ namespace DesktopUI.ViewModels
         public bool IsLive { get => _isLive; private set => SetProperty(ref _isLive, value); }
         public double StepProgress { get => _stepProgress; private set => SetProperty(ref _stepProgress, value); }
         public ProfileChartData? ChartData { get => _chartData; private set => SetProperty(ref _chartData, value); }
+
+        // Program yürürken (vakum, ısıtma, soğutma, duraklatılmış) adım ve ilerleme gösterilir.
+        private bool ProgramRunning => _seqState is 20 or 30 or 50 or 70;
 
         // Bağımlılıkları alır, komutları kurar, canlı veri olaylarına abone olur ve ilk verileri ister.
         public OverviewViewModel(ApiClient api, SessionService session, LiveDataService live, AppSettings settings)
@@ -106,11 +123,12 @@ namespace DesktopUI.ViewModels
             _live.ProfileChanged += OnProfileChanged;
 
             _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            _timer.Tick += (_, _) => OnTick();
+            _timer.Tick += (_, _) => UpdateLive();
             _timer.Start();
 
             Set("AlarmSummary", "yok");
             Set("ChartNote", "Çalışan program yok");
+            Set("StepPanel", "Off");
             Publish();
 
             _ = LoadAlarmsAsync();
@@ -137,21 +155,11 @@ namespace DesktopUI.ViewModels
             UpdateLive();
         }
 
-        // Her saniye verinin tazeliğini denetler, belirli aralıkla grafiği yeniler.
-        private void OnTick()
-        {
-            UpdateLive();
-
-            _chartAge++;
-            if (_chartAge >= ChartRefreshSeconds && _batchId > 0)
-                _ = LoadChartAsync();
-        }
-
-        // Çalışan reçete değişince ya da adım atlanınca grafiği hemen yeniler.
+        // Çalışan reçete değişince (çalışırken değişiklik) reçeteyi yeniden okur; eğri ve adım paneli yenilenir.
         private void OnProfileChanged()
         {
             if (_batchId > 0)
-                _ = LoadChartAsync();
+                _ = LoadRecipeAsync();
         }
 
         // Veri taze ve PLC okunabiliyorsa ekranı canlı sayar; değilse değerlerin üstü örtülür.
@@ -173,8 +181,11 @@ namespace DesktopUI.ViewModels
             _seqState = s.SeqState;
             _holdReason = s.HoldReason;
             _canStart = s.SeqState == 0 && s.HasPermit(0);
+            _activeStep = s.ActiveStep;
+            _stepElapsed = s.StepElapsedMin;
+            _tempPota = s.TempPota;
 
-            bool programActive = s.SeqState is 20 or 30 or 50 or 70;
+            bool programActive = ProgramRunning;
             bool knApprox = s.GetDeviceBit(1, 13);
 
             // Program durumu
@@ -283,23 +294,140 @@ namespace DesktopUI.ViewModels
 
             Set("Hint", BuildHint(s));
 
-            Publish();
-            RefreshCommands();
-
+            // Şarj değiştiyse çalışan reçete yeniden okunur; şarj yoksa eğri ve adım paneli boşaltılır.
             if (s.BatchId != _batchId)
             {
                 _batchId = s.BatchId;
+                _recipe = null;
+                _timeline = null;
+                _shownStepNo = -1;
+
                 if (_batchId > 0)
-                {
-                    _ = LoadChartAsync();
-                }
+                    _ = LoadRecipeAsync();
                 else
-                {
-                    ChartData = null;
                     Set("ChartNote", "Çalışan program yok");
-                    Publish();
+            }
+
+            UpdateStepPanel();
+            RefreshChart();
+
+            Publish();
+            RefreshCommands();
+        }
+
+        // PLC'de çalışan reçeteyi (DB203) okuyup zaman çizgisini kurar.
+        private async Task LoadRecipeAsync()
+        {
+            int batchId = _batchId;
+
+            var result = await _api.GetAsync<Recipe>("api/recipes/active");
+            if (batchId != _batchId)
+                return;
+
+            if (!result.IsSuccess || result.Data == null)
+            {
+                Set("ChartNote", "Çalışan reçete okunamadı");
+                Publish();
+                return;
+            }
+
+            _recipe = result.Data;
+            _timeline = RecipeTimeline.Build(_recipe, TimelineStartTemp);
+            _shownStepNo = -1;
+
+            Set("ChartNote", $"{_recipe.RecipeName} · adımların üzerine gelince ayrıntıları görünür");
+            UpdateStepPanel();
+            RefreshChart();
+            Publish();
+        }
+
+        // Aktif adım panelini çalışan adımın değerleriyle doldurur; adım değişmediyse dokunmaz.
+        private void UpdateStepPanel()
+        {
+            var step = ProgramRunning ? _recipe?.Steps.FirstOrDefault(s => s.StepNo == _activeStep) : null;
+
+            if (step == null)
+            {
+                if (_shownStepNo != 0)
+                {
+                    ActiveStepItems.Clear();
+                    Set("StepPanel", "Off");
+                    _shownStepNo = 0;
+                }
+                return;
+            }
+
+            if (_shownStepNo == step.StepNo)
+                return;
+
+            _shownStepNo = step.StepNo;
+            ActiveStepItems.Clear();
+
+            switch (step.StepType)
+            {
+                case 1:
+                    Set("StepTitle", $"AKTİF ADIM {step.StepNo} · VAKUM");
+                    AddItem("Vakum seti", $"{step.Vac_SetPoint} mbar mutlak");
+                    AddItem("Zaman aşımı", $"{step.Vac_Timeout} dk");
+                    break;
+
+                case 2:
+                    Set("StepTitle", $"AKTİF ADIM {step.StepNo} · ISITMA");
+                    AddItem("Hedef sıcaklık", $"{step.TargetTemp} °C");
+                    AddItem("Adım süresi", $"{step.StepTime} dk");
+                    if (step.GSoak > 0) AddItem("Gsoak", $"{step.GSoak} °C");
+                    AddItem("Azot", $"{step.N2_Flow} L/h");
+                    if (step.NH3_Flow > 0) AddItem("Amonyak", $"{step.NH3_Flow} L/h");
+                    if (step.CO2_Perc > 0) AddItem("CO₂", $"%{step.CO2_Perc}");
+                    if (step.Su_On != 0) AddItem("Su", "açık");
+                    if (step.H2_Auto != 0) AddItem("H₂ seti", "%" + (step.H2_Set / 10.0).ToString("0.0", Tr));
+                    AddItem("Fan", $"%{step.FanSpeed}");
+                    break;
+
+                case 3:
+                    Set("StepTitle", $"AKTİF ADIM {step.StepNo} · SOĞUTMA");
+                    AddItem("Bitiş sıcaklığı", $"{step.TargetTemp} °C");
+                    AddItem("Azot", $"{step.N2_Flow} L/h");
+                    AddItem("Fan", $"%{step.FanSpeed}");
+                    break;
+
+                default:
+                    Set("StepTitle", $"AKTİF ADIM {step.StepNo}");
+                    break;
+            }
+
+            Set("StepPanel", "On");
+        }
+
+        // Aktif adım paneline bir değer ekler.
+        private void AddItem(string label, string value)
+        {
+            ActiveStepItems.Add(new StepItem { Label = label, Value = value });
+        }
+
+        // Program eğrisini zaman çizgisinden üretir; program yürüyorsa ilerleme çizgisini ve ölçülen sıcaklığı ekler.
+        private void RefreshChart()
+        {
+            if (_timeline == null)
+            {
+                if (ChartData != null)
+                    ChartData = null;
+                return;
+            }
+
+            var data = _timeline.ToSimpleChartData();
+
+            if (ProgramRunning)
+            {
+                double nowX = _timeline.GetPositionX(_activeStep, _stepElapsed, _tempPota);
+                if (nowX >= 0)
+                {
+                    data.Progress = _timeline.GetProgressLine(nowX);
+                    data.Actual = new List<Point> { new Point(nowX, _tempPota) };
                 }
             }
+
+            ChartData = data;
         }
 
         // Komut satırının sağında gösterilen açıklamayı üretir: duraklatma sebebi ya da izni olmayan istek.
@@ -347,81 +475,6 @@ namespace DesktopUI.ViewModels
             var result = await _api.GetAsync<List<ActiveAlarmDto>>("api/alarms/active");
             if (result.IsSuccess && result.Data != null)
                 OnAlarmsReceived(result.Data);
-        }
-
-        // Çalışan şarjın teorik eğrisini ve gerçekleşen pota sıcaklığını sunucudan alıp grafiğe çevirir.
-        private async Task LoadChartAsync()
-        {
-            _chartAge = 0;
-            int batchId = _batchId;
-
-            var profileTask = _api.GetAsync<RecipeProfileDto>("api/profiles/active");
-            var trendTask = _api.GetAsync<TrendDataDto>($"api/trends/batch/{batchId}?tags=TempPota&points=300");
-            await Task.WhenAll(profileTask, trendTask);
-
-            if (batchId != _batchId)
-                return;
-
-            var profile = profileTask.Result.IsSuccess ? profileTask.Result.Data : null;
-            var trend = trendTask.Result.IsSuccess ? trendTask.Result.Data : null;
-
-            if (profile == null && trend == null)
-            {
-                Set("ChartNote", "Grafik verisi alınamadı");
-                Publish();
-                return;
-            }
-
-            DateTime now = DateTime.Now;
-
-            // Teorik noktaların saatleri: ısıtma başlamadıysa eğri şu andan başlıyormuş gibi yerleştirilir.
-            var theoryTimes = new List<(int Segment, DateTime Time, float Temp)>();
-            if (profile != null)
-            {
-                DateTime baseTime = profile.HeatingStart ?? now;
-                foreach (var point in profile.Points)
-                    theoryTimes.Add((point.Segment, point.Timestamp ?? baseTime.AddMinutes(point.Minute), point.Temp));
-            }
-
-            var actualTimes = new List<(DateTime Time, float Temp)>();
-            var series = trend?.Series.FirstOrDefault();
-            if (trend != null && series != null)
-            {
-                int count = Math.Min(trend.Timestamps.Count, series.Values.Count);
-                for (int i = 0; i < count; i++)
-                    actualTimes.Add((trend.Timestamps[i], series.Values[i]));
-            }
-
-            var allTimes = theoryTimes.Select(t => t.Time).Concat(actualTimes.Select(a => a.Time)).ToList();
-            if (allTimes.Count == 0)
-            {
-                Set("ChartNote", "Henüz ölçüm yok");
-                Publish();
-                return;
-            }
-
-            DateTime origin = allTimes.Min();
-            double Hours(DateTime time) => (time - origin).TotalHours;
-
-            var data = new ProfileChartData
-            {
-                Theory = theoryTimes
-                    .GroupBy(t => t.Segment)
-                    .Select(g => g.Select(t => new Point(Hours(t.Time), t.Temp)).ToList())
-                    .ToList(),
-                Actual = actualTimes.Select(a => new Point(Hours(a.Time), a.Temp)).ToList(),
-                NowX = Hours(now)
-            };
-
-            double maxX = Math.Max(Hours(allTimes.Max()), data.NowX);
-            double maxY = theoryTimes.Select(t => t.Temp).Concat(actualTimes.Select(a => a.Temp)).DefaultIfEmpty(100).Max();
-
-            data.XMax = Math.Max(1, Math.Ceiling(maxX));
-            data.YMax = Math.Max(150, Math.Ceiling(maxY / 150.0) * 150);
-
-            ChartData = data;
-            Set("ChartNote", profile == null ? "Teorik eğri alınamadı" : profile.IsAnchored ? profile.RecipeName : $"{profile.RecipeName} · ısıtma henüz başlamadı");
-            Publish();
         }
 
         // Gerekiyorsa onay alır, komutu PLC'ye gönderir ve sonucu komut satırında gösterir.

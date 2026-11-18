@@ -6,10 +6,11 @@
 
     <UserControl.Resources>
 
-        <!-- Adım tipi renkleri: yalnızca satırdaki ince şeritte -->
+        <!-- Adım tipi renkleri: yalnızca satırdaki ince şeritte ve grafiğin üst şeridinde -->
         <SolidColorBrush x:Key="VacuumBrush" Color="#5B8DEF" />
         <SolidColorBrush x:Key="HeatingBrush" Color="#FF9F45" />
         <SolidColorBrush x:Key="CoolingBrush" Color="#3CC8D9" />
+        <SolidColorBrush x:Key="TargetBrush" Color="#FFB84A" />
 
         <Style x:Key="Panel" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource PanelBrush}" />
@@ -119,7 +120,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="16" />
-                    <RowDefinition Height="*" MinHeight="220" />
+                    <RowDefinition Height="*" MinHeight="260" />
                 </Grid.RowDefinitions>
 
                 <!-- ÇALIŞAN REÇETE -->
@@ -176,7 +177,7 @@
                         </Grid>
 
                         <!-- Adım satırları -->
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="320">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="260">
                             <ItemsControl ItemsSource="{Binding Steps}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -240,32 +241,43 @@
                             </ItemsControl>
                         </ScrollViewer>
 
-                        <!-- Adıma git ve sonuç mesajı -->
-                        <DockPanel Margin="0,12,0,0">
-                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                                <TextBlock Text="Adıma git" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
-                                <ComboBox Width="250" ItemsSource="{Binding GotoSteps}" DisplayMemberPath="Text" SelectedItem="{Binding SelectedGotoStep}" />
-                                <TextBlock Text="geçmiş sayılacak dakika" Style="{StaticResource LabelText}" VerticalAlignment="Center" Margin="14,0,8,0" />
-                                <TextBox Width="70" Text="{Binding GotoMinuteText, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Right" Padding="6,5" FontSize="14" VerticalAlignment="Center" />
-                                <Button Content="Git" Command="{Binding GotoCommand}" Margin="10,0,0,0" Padding="20,0" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding Message}" Style="{StaticResource ResultText}" Margin="20,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="14" />
-                        </DockPanel>
+                        <TextBlock Text="{Binding Message}" Style="{StaticResource ResultText}" Margin="0,10,0,0" TextWrapping="Wrap" FontSize="14" />
                     </StackPanel>
                 </Border>
 
-                <!-- GRAFİK -->
+                <!-- GRAFİK VE ADIMA GİT -->
                 <Border Grid.Row="2" Style="{StaticResource Panel}" Padding="18,14">
                     <DockPanel>
-                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,6">
-                            <TextBlock Text="SICAKLIK PROFİLİ" Style="{StaticResource PanelTitle}" />
-                            <TextBlock DockPanel.Dock="Right" Text="Gerçekleşen" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,0,0" />
-                            <Rectangle DockPanel.Dock="Right" Width="18" Height="3" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock DockPanel.Dock="Right" Text="Teorik" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,16,0" />
-                            <Rectangle DockPanel.Dock="Right" Width="18" Height="2" VerticalAlignment="Center" Stroke="{StaticResource SoftTextBrush}" StrokeDashArray="2 1.5" />
+
+                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                            <TextBlock Text="PROGRAM ZAMAN ÇİZGİSİ" Style="{StaticResource PanelTitle}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="Gidilecek yer" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="3" Height="14" Fill="{StaticResource TargetBrush}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="Ölçülen sıcaklık" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,16,0" VerticalAlignment="Center" />
+                            <Ellipse DockPanel.Dock="Right" Width="10" Height="10" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="Şu anki yer" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,16,0" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="3" Height="14" Fill="{StaticResource OkTextBrush}" VerticalAlignment="Center" />
                         </DockPanel>
-                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding ChartNote}" Style="{StaticResource LabelText}" Margin="0,4,0,0" />
-                        <controls:ProfileChart Data="{Binding ChartData}" />
+
+                        <!-- Adıma git: grafikten sürükleyerek ya da elle -->
+                        <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                                <TextBlock Text="Adıma git" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                <ComboBox Width="250" ItemsSource="{Binding GotoSteps}" DisplayMemberPath="Text" SelectedItem="{Binding SelectedGotoStep}" />
+                                <TextBlock Text="dakika" Style="{StaticResource LabelText}" VerticalAlignment="Center" Margin="14,0,8,0" />
+                                <TextBox Width="70" Text="{Binding GotoMinuteText, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Right" Padding="6,5" FontSize="14" VerticalAlignment="Center" />
+                                <Button Content="Git" Command="{Binding GotoCommand}" Margin="10,0,0,0" Padding="24,0"
+                                        Background="#3A2C0B" BorderBrush="{StaticResource TargetBrush}" />
+                                <Button Content="Seçimi Kaldır" Command="{Binding ClearTargetCommand}" Margin="8,0,0,0" />
+                            </StackPanel>
+                            <TextBlock Text="Grafiğe tıklayıp sürükleyerek gidilecek adımı ve dakikayı seçin. Yalnızca ısıtma ya da soğutmadayken ve kaydedilmemiş değişiklik yokken seçilebilir."
+                                       Style="{StaticResource LabelText}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="20,0,0,0" />
+                        </DockPanel>
+
+                        <controls:ProfileChart Data="{Binding ChartData}"
+                                               TargetX="{Binding TargetX, Mode=TwoWay}"
+                                               TargetText="{Binding TargetText}"
+                                               CanDrag="{Binding CanDragTarget}" />
                     </DockPanel>
                 </Border>
             </Grid>
