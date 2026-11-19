@@ -1,0 +1,284 @@
+﻿<UserControl x:Class="DesktopUI.Views.MaintenanceView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Language="tr-TR">
+
+    <UserControl.Resources>
+
+        <Style x:Key="Panel" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style x:Key="PanelTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- Durum etiketi: On mavi (sürüyor), Ok yeşil, Bad kırmızı, Warn sarı, diğerleri gri -->
+        <Style x:Key="Chip" TargetType="Border">
+            <Setter Property="CornerRadius" Value="13" />
+            <Setter Property="Padding" Value="12,3" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource SoftTextBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="On">
+                    <Setter Property="Background" Value="{StaticResource NavActiveBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource TextBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Ok">
+                    <Setter Property="Background" Value="{StaticResource OkBackBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource OkTextBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Bad">
+                    <Setter Property="Background" Value="{StaticResource BadBackBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource BadTextBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Warn">
+                    <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource WarnTextBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Test geçmişi satırı: solundaki şerit sonucun rengindedir -->
+        <Style x:Key="TestRow" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="BorderThickness" Value="3,0,0,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource WarnBrush}" />
+            <Setter Property="Margin" Value="0,0,4,3" />
+            <Setter Property="Padding" Value="10,0,8,0" />
+            <Setter Property="Height" Value="34" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="On">
+                    <Setter Property="BorderBrush" Value="{StaticResource OkBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Bad">
+                    <Setter Property="BorderBrush" Value="{StaticResource BadBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="Cell" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+
+        <!-- Üstte ad, altta büyük değer -->
+        <Style x:Key="Field" TargetType="StackPanel">
+            <Setter Property="Margin" Value="0,0,34,0" />
+        </Style>
+        <Style x:Key="FieldValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="ActionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="18,0" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="16" />
+            <ColumnDefinition Width="500" />
+        </Grid.ColumnDefinitions>
+
+        <!-- KAÇAK TESTİ -->
+        <Border Grid.Column="0" Style="{StaticResource Panel}" Padding="18,14,12,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="0,0,6,0">
+                    <DockPanel Margin="0,0,0,12">
+                        <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding [LeakLevel]}">
+                            <TextBlock Text="{Binding [LeakState]}" FontSize="13" FontWeight="SemiBold" />
+                        </Border>
+                        <TextBlock Text="KAÇAK TESTİ" Style="{StaticResource PanelTitle}" VerticalAlignment="Center" />
+                    </DockPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <StackPanel Style="{StaticResource Field}">
+                            <TextBlock Text="Aşamanın kalan süresi" Style="{StaticResource LabelText}" />
+                            <TextBlock Text="{Binding [LeakRemain]}" Style="{StaticResource FieldValue}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource Field}">
+                            <TextBlock Text="Basınç artışı" Style="{StaticResource LabelText}" />
+                            <TextBlock Text="{Binding [LeakRise]}" Style="{StaticResource FieldValue}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource Field}">
+                            <TextBlock Text="Basınç" Style="{StaticResource LabelText}" />
+                            <TextBlock Text="{Binding [LeakPressure]}" Style="{StaticResource FieldValue}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource Field}">
+                            <TextBlock Text="Pota sıcaklığı" Style="{StaticResource LabelText}" />
+                            <TextBlock Text="{Binding [LeakTemp]}" Style="{StaticResource FieldValue}" />
+                        </StackPanel>
+                        <StackPanel Style="{StaticResource Field}">
+                            <TextBlock Text="Son sonuç" Style="{StaticResource LabelText}" Margin="0,0,0,3" />
+                            <Border Style="{StaticResource Chip}" Tag="{Binding [LeakLastLevel]}">
+                                <TextBlock Text="{Binding [LeakLast]}" FontSize="13" FontWeight="SemiBold" />
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button Content="Testi Başlat" Style="{StaticResource ActionButton}" Command="{Binding LeakStartCommand}" />
+                        <Button Content="İptal Et" Style="{StaticResource ActionButton}" Command="{Binding LeakCancelCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap">
+                        <Run Text="Geçerli ayarlar: " />
+                        <Run Text="{Binding [LeakSettings], Mode=OneWay}" Foreground="{StaticResource SoftTextBrush}" />
+                        <Run Text=" (Ayarlar sayfasından değiştirilir.)" />
+                    </TextBlock>
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                               Text="Sonuç yalnızca bilgidir; kalan test program başlatmayı engellemez." />
+
+                    <DockPanel Margin="0,22,0,8">
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding [LeakHistoryNote]}" Foreground="{StaticResource SoftTextBrush}" FontSize="12" />
+                        <TextBlock Text="TEST GEÇMİŞİ" Style="{StaticResource PanelTitle}" />
+                    </DockPanel>
+
+                    <Grid Margin="13,0,12,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="140" />
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="80" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Sonuçlandı" Style="{StaticResource LabelText}" />
+                        <TextBlock Grid.Column="1" Text="Sonuç" Style="{StaticResource LabelText}" />
+                        <TextBlock Grid.Column="2" Text="Artış" Style="{StaticResource LabelText}" />
+                        <TextBlock Grid.Column="3" Text="Artış hızı" Style="{StaticResource LabelText}" />
+                        <TextBlock Grid.Column="4" Text="Test ayarları" Style="{StaticResource LabelText}" />
+                        <TextBlock Grid.Column="5" Text="Sıcaklık" Style="{StaticResource LabelText}" />
+                    </Grid>
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding LeakTests}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource TestRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="140" />
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="100" />
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="3*" />
+                                            <ColumnDefinition Width="80" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Time}" Style="{StaticResource Cell}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding ResultText}" Style="{StaticResource Cell}" FontWeight="SemiBold" ToolTip="{Binding ResultText}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Rise}" Style="{StaticResource Cell}" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Rate}" Style="{StaticResource Cell}" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Settings}" Style="{StaticResource Cell}" Foreground="{StaticResource SoftTextBrush}" />
+                                        <TextBlock Grid.Column="5" Text="{Binding Temp}" Style="{StaticResource Cell}" Margin="0" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- SAĞ SÜTUN -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="16" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Çalışma saatleri -->
+            <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="18,14">
+                <StackPanel>
+                    <TextBlock Text="ÇALIŞMA SAATLERİ" Style="{StaticResource PanelTitle}" Margin="0,0,0,10" />
+                    <ItemsControl ItemsSource="{Binding RunHours}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{StaticResource CardBrush}" CornerRadius="5" Padding="12,6,8,6" Margin="0,0,0,4">
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="Sıfırla" Height="30" Padding="12,0" FontSize="13" Margin="14,0,0,0"
+                                                Command="{Binding DataContext.ResetHoursCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}" />
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Hours}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Name}" FontSize="14" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- PID otomatik ayar -->
+            <Border Grid.Row="2" Style="{StaticResource Panel}" Padding="18,14">
+                <StackPanel>
+                    <TextBlock Text="PID OTOMATİK AYAR" Style="{StaticResource PanelTitle}" Margin="0,0,0,10" />
+
+                    <UniformGrid Columns="3" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="Kp" Style="{StaticResource LabelText}" />
+                            <TextBlock Text="{Binding [PidGain]}" Style="{StaticResource FieldValue}" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Ti" Style="{StaticResource LabelText}" />
+                            <TextBlock Text="{Binding [PidTi]}" Style="{StaticResource FieldValue}" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock Text="Td" Style="{StaticResource LabelText}" />
+                            <TextBlock Text="{Binding [PidTd]}" Style="{StaticResource FieldValue}" />
+                        </StackPanel>
+                    </UniformGrid>
+
+                    <TextBlock FontSize="13" Margin="0,0,0,4">
+                        <Run Text="PID durumu: " Foreground="{StaticResource MutedBrush}" />
+                        <Run Text="{Binding [PidState], Mode=OneWay}" FontWeight="SemiBold" />
+                    </TextBlock>
+                    <TextBlock FontSize="13" Margin="0,0,0,8">
+                        <Run Text="Pota: " Foreground="{StaticResource MutedBrush}" />
+                        <Run Text="{Binding [PidTemp], Mode=OneWay}" FontWeight="SemiBold" />
+                    </TextBlock>
+                    <Border Style="{StaticResource Chip}" Tag="{Binding [TuneLevel]}" Margin="0,0,0,12">
+                        <TextBlock Text="{Binding [TuneStatus]}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Ön Ayar" Style="{StaticResource ActionButton}" Command="{Binding TuneStartCommand}" CommandParameter="1" />
+                        <Button Content="İnce Ayar" Style="{StaticResource ActionButton}" Command="{Binding TuneStartCommand}" CommandParameter="2" Margin="10,0,0,0" />
+                        <Button Content="İptal Et" Style="{StaticResource ActionButton}" Command="{Binding TuneCancelCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"
+                               Text="Ayar için ısıtma yapılıyor ve set sabit olmalı: manuel modda ısıtma ya da program Beklet ile duraklatılmış. Ön ayar soğuk fırında, ince ayar setteyken yapılır. Eski ve yeni değerler işlem kaydına yazılır." />
+                </StackPanel>
+            </Border>
+
+            <!-- Son komut ve uyarılar -->
+            <Border Grid.Row="4" Style="{StaticResource Panel}" Padding="18,14" VerticalAlignment="Top">
+                <StackPanel>
+                    <TextBlock Text="SON KOMUT" Style="{StaticResource PanelTitle}" Margin="0,0,0,6" />
+                    <TextBlock Text="{Binding [CmdResult]}" FontSize="13" TextWrapping="Wrap" MinHeight="18" />
+                    <TextBlock Text="{Binding [LiveNote]}" Foreground="{StaticResource BadBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,6,0,0" />
+                    <TextBlock Text="{Binding [MaintainNote]}" Foreground="{StaticResource WarnTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

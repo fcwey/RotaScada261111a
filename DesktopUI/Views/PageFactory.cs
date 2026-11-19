@@ -1,4 +1,5 @@
-﻿using DesktopUI.Services;
+﻿using Core.Constants;
+using DesktopUI.Services;
 using DesktopUI.ViewModels;
 
 namespace DesktopUI.Views
@@ -57,15 +58,46 @@ namespace DesktopUI.Views
                         return (new AlarmsView(viewModel), viewModel);
                     }
 
+                case "manual":
+                    {
+                        var viewModel = new ManualViewModel(_api, _session, _live, _settings);
+                        return (new ManualView(viewModel), viewModel);
+                    }
+
                 case "batches":
                     {
                         var viewModel = new BatchesViewModel(_api, _session);
                         return (new BatchesView(viewModel), null);
                     }
 
+                case "maintenance":
+                    {
+                        var viewModel = new MaintenanceViewModel(_api, _session, _live, _settings);
+                        return (new MaintenanceView(viewModel), viewModel);
+                    }
+
+                case "settings":
+                    return (CreateSettings(), null);
+
                 default:
                     return (new PlaceholderPageViewModel(title), null);
             }
+        }
+
+        // Ayarlar sayfasını sekmeleriyle kurar; kullanıcı ve işlem kaydı sekmeleri yalnızca Admin'e gösterilir.
+        private SettingsHostView CreateSettings()
+        {
+            var host = new SettingsHostViewModel();
+
+            host.AddTab("PLC Parametreleri", () => new SettingsView(new SettingsViewModel(_api, _session)));
+
+            if (_session.HasRole(PlcPermissions.Admin))
+            {
+                host.AddTab("Kullanıcılar", () => new UsersView(new UsersViewModel(_api, _session)));
+                host.AddTab("İşlem Kayıtları", () => new AuditLogsView(new AuditLogsViewModel(_api)));
+            }
+
+            return new SettingsHostView(host);
         }
     }
 }

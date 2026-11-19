@@ -1,0 +1,219 @@
+﻿<UserControl x:Class="DesktopUI.Views.ManualView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Language="tr-TR">
+
+    <UserControl.Resources>
+
+        <Style x:Key="Panel" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style x:Key="PanelTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- Mod etiketi: On yeşil (manuel), Warn sarı (kısıtlı manuel), diğerleri gri -->
+        <Style x:Key="ModeChip" TargetType="Border">
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="16,5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{StaticResource SoftTextBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="On">
+                    <Setter Property="Background" Value="{StaticResource OkBackBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource OkTextBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Warn">
+                    <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
+                    <Setter Property="TextElement.Foreground" Value="{StaticResource WarnTextBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Cihazın durum noktası -->
+        <Style x:Key="StateDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+            <Setter Property="Stroke" Value="{StaticResource IdleBrush}" />
+            <Setter Property="StrokeThickness" Value="1.5" />
+            <Setter Property="Fill" Value="Transparent" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="On">
+                    <Setter Property="Fill" Value="{StaticResource OkBrush}" />
+                    <Setter Property="Stroke" Value="{StaticResource OkBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Fault">
+                    <Setter Property="Fill" Value="{StaticResource BadBrush}" />
+                    <Setter Property="Stroke" Value="{StaticResource BadBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Cihazın durum yazısı -->
+        <Style x:Key="StateText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Level}" Value="On">
+                    <Setter Property="Foreground" Value="{StaticResource OkTextBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Level}" Value="Fault">
+                    <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Üst şeritteki ölçüm -->
+        <Style x:Key="Field" TargetType="StackPanel">
+            <Setter Property="Margin" Value="28,0,0,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- Karttaki ve sağ paneldeki düğme -->
+        <Style x:Key="CardButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- MOD VE ÖLÇÜMLER -->
+        <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="18,14">
+            <StackPanel>
+                <DockPanel LastChildFill="False">
+                    <Border Style="{StaticResource ModeChip}" Tag="{Binding [ModeLevel]}">
+                        <TextBlock Text="{Binding [Mode]}" FontSize="16" FontWeight="Bold" />
+                    </Border>
+                    <TextBlock Text="{Binding [Seq]}" Foreground="{StaticResource SoftTextBrush}" FontSize="14" VerticalAlignment="Center" Margin="14,0,0,0" />
+
+                    <StackPanel DockPanel.Dock="Right" Style="{StaticResource Field}">
+                        <TextBlock Text="Hidrojen" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding [H2]}" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Style="{StaticResource Field}">
+                        <TextBlock Text="Amonyak" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding [NH3]}" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Style="{StaticResource Field}">
+                        <TextBlock Text="Azot" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding [N2]}" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Style="{StaticResource Field}">
+                        <TextBlock Text="{Binding [PressureSet]}" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding [Pressure]}" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Style="{StaticResource Field}">
+                        <TextBlock Text="{Binding [TempSet]}" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="{Binding [Temp]}" FontSize="18" FontWeight="SemiBold" />
+                    </StackPanel>
+                </DockPanel>
+                <TextBlock Text="{Binding [Banner]}" Foreground="{StaticResource WarnTextBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,10,0,0" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="400" />
+            </Grid.ColumnDefinitions>
+
+            <!-- CİHAZLAR -->
+            <Border Grid.Column="0" Style="{StaticResource Panel}" Padding="14,14,6,6">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="CİHAZLAR" Style="{StaticResource PanelTitle}" Margin="2,0,0,10" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Devices}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="4" VerticalAlignment="Top" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{StaticResource CardBrush}" CornerRadius="6" Padding="14,12" Margin="0,0,8,8" MinHeight="176">
+                                        <DockPanel>
+                                            <DockPanel DockPanel.Dock="Top">
+                                                <Ellipse DockPanel.Dock="Left" Style="{StaticResource StateDot}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding StateText}" Style="{StaticResource StateText}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            </DockPanel>
+                                            <TextBlock DockPanel.Dock="Top" Text="{Binding Detail}" Foreground="{StaticResource SoftTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0" MinHeight="32" />
+
+                                            <UniformGrid DockPanel.Dock="Bottom" Columns="2" Margin="0,8,0,0">
+                                                <Button Content="Aç" Style="{StaticResource CardButton}" Margin="0,0,4,0" IsEnabled="{Binding IsEnabled}"
+                                                        Command="{Binding DataContext.TurnOnCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}" />
+                                                <Button Content="Kapat" Style="{StaticResource CardButton}" Margin="4,0,0,0" IsEnabled="{Binding IsEnabled}"
+                                                        Command="{Binding DataContext.TurnOffCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}" />
+                                            </UniformGrid>
+
+                                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding Note}" Foreground="{StaticResource WarnTextBrush}" FontSize="12" TextWrapping="Wrap" MinHeight="16" Margin="0,4,0,0" />
+
+                                            <!-- Değer kutusu: yalnızca değer isteyen cihazlarda görünür -->
+                                            <DockPanel VerticalAlignment="Bottom" Visibility="{Binding HasValue, Converter={StaticResource BoolToVis}}">
+                                                <TextBox DockPanel.Dock="Right" Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsEnabled}"
+                                                         Width="86" Height="32" Padding="8,4" FontSize="14" TextAlignment="Right" />
+                                                <TextBlock Text="{Binding ValueLabel}" Style="{StaticResource LabelText}" VerticalAlignment="Center" />
+                                            </DockPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- BASINÇ MODU VE AŞMA KOMUTLARI -->
+            <Border Grid.Column="2" Style="{StaticResource Panel}" Padding="16,14">
+                <StackPanel>
+                    <TextBlock Text="BASINÇ MODU" Style="{StaticResource PanelTitle}" Margin="0,0,0,8" />
+                    <TextBlock FontSize="14" Margin="0,0,0,10">
+                        <Run Text="Geçerli mod: " Foreground="{StaticResource MutedBrush}" />
+                        <Run Text="{Binding [PressureMode], Mode=OneWay}" FontWeight="SemiBold" />
+                    </TextBlock>
+                    <Button Content="Atmosfere Açık" Style="{StaticResource CardButton}" Command="{Binding SetPressureModeCommand}" CommandParameter="0" Margin="0,0,0,8" />
+                    <DockPanel Margin="0,0,0,8">
+                        <TextBlock DockPanel.Dock="Right" Text="mbar" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                        <TextBox DockPanel.Dock="Right" Text="{Binding PressureSetText, UpdateSourceTrigger=PropertyChanged}" Width="76" Height="34" Padding="8,5" TextAlignment="Right" Margin="8,0,0,0" />
+                        <Button Content="Otomatik Kontrol" Style="{StaticResource CardButton}" Command="{Binding SetPressureModeCommand}" CommandParameter="1" />
+                    </DockPanel>
+                    <Button Content="Elle Vana" Style="{StaticResource CardButton}" Command="{Binding SetPressureModeCommand}" CommandParameter="2" />
+                    <TextBlock Text="{Binding [PressureNote]}" Foreground="{StaticResource WarnTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                               Text="Otomatik kontrolde set boş bırakılırsa önceki set korunur. Basınç kontrol ve tahliye vanası kartları yalnızca &quot;Elle Vana&quot; modunda açılır." />
+
+                    <TextBlock Text="AŞMA KOMUTLARI" Style="{StaticResource PanelTitle}" Margin="0,26,0,8" />
+                    <TextBlock Foreground="{StaticResource MutedBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"
+                               Text="Bu komutlar ölçümün yerine operatör kararını koyar; sensör arızasında takılı kalındığında kullanılır. Hepsi alarm kaydına işlenir." />
+                    <Button Content="Yıkamayı Onayla" Style="{StaticResource CardButton}" Command="{Binding PurgeOverrideCommand}" Margin="0,0,0,8" />
+                    <Button Content="Korumalı Beklemeyi Bitir" Style="{StaticResource CardButton}" Command="{Binding HoldExitCommand}" Margin="0,0,0,8" />
+                    <Button Content="Kapak Kilidini Aş" Style="{StaticResource CardButton}" Command="{Binding LidOverrideCommand}" Margin="0,0,0,8"
+                            Background="{StaticResource BadBackBrush}" BorderBrush="#A8383C" Foreground="{StaticResource BadTextBrush}" />
+                    <Button Content="Kapak Kilidi Aşmayı İptal Et" Style="{StaticResource CardButton}" Command="{Binding LidOverrideCancelCommand}" />
+                    <TextBlock Text="{Binding [LidOverride]}" Foreground="{StaticResource BadBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding [OverrideNote]}" Foreground="{StaticResource WarnTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                    <TextBlock Text="SON KOMUT" Style="{StaticResource PanelTitle}" Margin="0,26,0,6" />
+                    <TextBlock Text="{Binding [CmdResult]}" FontSize="13" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
