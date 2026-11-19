@@ -9,11 +9,13 @@ namespace DesktopUI.ViewModels
         private readonly Func<object> _create;
         private object? _content;
 
+        public string Key { get; }
         public string Title { get; }
 
-        // Sekmenin başlığını ve içeriğini üretecek işlemi alır.
-        public SettingsTab(string title, Func<object> create)
+        // Sekmenin anahtarını, başlığını ve içeriğini üretecek işlemi alır.
+        public SettingsTab(string key, string title, Func<object> create)
         {
+            Key = key;
             Title = title;
             _create = create;
         }
@@ -54,12 +56,20 @@ namespace DesktopUI.ViewModels
         }
 
         // Yeni bir sekme ekler; ilk eklenen sekme seçili olur.
-        public void AddTab(string title, Func<object> create)
+        public void AddTab(string key, string title, Func<object> create)
         {
-            var tab = new SettingsTab(title, create);
+            var tab = new SettingsTab(key, title, create);
             Tabs.Add(tab);
 
             if (Tabs.Count == 1)
+                SelectedTab = tab;
+        }
+
+        // Anahtarı verilen sekmeyi seçer; öyle bir sekme yoksa seçim değişmez.
+        public void SelectTab(string key)
+        {
+            var tab = Tabs.FirstOrDefault(t => t.Key == key);
+            if (tab != null)
                 SelectedTab = tab;
         }
     }

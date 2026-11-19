@@ -1,6 +1,7 @@
 ﻿using Core.Constants;
 using DesktopUI.Services;
 using DesktopUI.ViewModels;
+using System.Windows.Data;
 
 namespace DesktopUI.Views
 {
@@ -11,6 +12,9 @@ namespace DesktopUI.Views
         private readonly SessionService _session;
         private readonly LiveDataService _live;
         private readonly AppSettings _settings;
+
+        // Ayarlar sayfası bir sonraki açılışında bu anahtarlı sekmeyle açılır; bir kez kullanılır.
+        public string? PendingSettingsTab { get; set; }
 
         // Sayfaların ihtiyaç duyduğu ortak servisleri alır.
         public PageFactory(ApiClient api, SessionService session, LiveDataService live, AppSettings settings)
@@ -84,17 +88,26 @@ namespace DesktopUI.Views
             }
         }
 
-        // Ayarlar sayfasını sekmeleriyle kurar; kullanıcı ve işlem kaydı sekmeleri yalnızca Admin'e gösterilir.
+        // Ayarlar sayfasını sekmeleriyle kurar; Bağlantı sekmesi PLC ayar yetkisine, kullanıcı ve işlem kaydı sekmeleri Admin'e gösterilir.
         private SettingsHostView CreateSettings()
         {
             var host = new SettingsHostViewModel();
 
-            host.AddTab("PLC Parametreleri", () => new SettingsView(new SettingsViewModel(_api, _session)));
+            host.AddTab("parameters", "PLC Parametreleri", () => new SettingsView(new SettingsViewModel(_api, _session)));
+
+            if (_session.HasRole(ParameterPermissions.PlcIpConfigWrite))
+                host.AddTab("connection", "Bağlantı", () => new ConnectionView(new ConnectionViewModel(_api, _live, _settings)));
 
             if (_session.HasRole(PlcPermissions.Admin))
             {
-                host.AddTab("Kullanıcılar", () => new UsersView(new UsersViewModel(_api, _session)));
-                host.AddTab("İşlem Kayıtları", () => new AuditLogsView(new AuditLogsViewModel(_api)));
+                host.AddTab("users", "Kullanıcılar", () => new UsersView(new UsersViewModel(_api, _session)));
+                host.AddTab("audit", "İşlem Kayıtları", () => new AuditLogsView(new AuditLogsViewModel(_api)));
+            }
+
+            if (PendingSettingsTab != null)
+            {
+                host.SelectTab(PendingSettingsTab);
+                PendingSettingsTab = null;
             }
 
             return new SettingsHostView(host);

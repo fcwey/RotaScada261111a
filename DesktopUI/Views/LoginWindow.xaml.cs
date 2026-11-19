@@ -8,13 +8,15 @@ namespace DesktopUI.Views
     {
         private readonly LoginViewModel _viewModel;
 
-        // Görünüm modelini bağlar ve imleci kullanıcı adı kutusuna koyar.
+        // Görünüm modelini bağlar, imleci kullanıcı adı kutusuna koyar ve pencere kapanınca sunucu beklemeyi durdurur.
         public LoginWindow(LoginViewModel viewModel)
         {
             InitializeComponent();
             _viewModel = viewModel;
             DataContext = viewModel;
+
             Loaded += (_, _) => UserNameBox.Focus();
+            Closed += (_, _) => _viewModel.Stop();
         }
 
         // Giriş düğmesine basılınca şifreyi kutudan alıp giriş yapar.
@@ -31,6 +33,19 @@ namespace DesktopUI.Views
 
             e.Handled = true;
             await _viewModel.LoginAsync(PasswordBox.Password);
+        }
+
+        // Başlık çubuğu olmadığı için kartın boş bir yerinden tutulup sürüklenmesini sağlar.
+        private void OnDragAreaMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ButtonState == MouseButtonState.Pressed)
+                DragMove();
+        }
+
+        // Pencereyi kapatır; giriş yapılmadıysa program da kapanır.
+        private void OnCloseClick(object sender, RoutedEventArgs e)
+        {
+            Close();
         }
     }
 }

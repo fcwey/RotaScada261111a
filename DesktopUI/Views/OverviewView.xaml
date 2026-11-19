@@ -122,26 +122,101 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Durum etiketi: On yeşil, Warn sarı, Fault kırmızı, diğerleri gri -->
-        <Style x:Key="Chip" TargetType="Border">
-            <Setter Property="Height" Value="26" />
-            <Setter Property="CornerRadius" Value="13" />
-            <Setter Property="Padding" Value="10,0" />
-            <Setter Property="Margin" Value="8,0,0,0" />
+        <!-- Kapak şeridi: On açılabilir (yeşil), Bad açılamaz (kırmızı), Warn kilit aşılmış (sarı) -->
+        <Style x:Key="LidStrip" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBrush}" />
-            <Setter Property="TextElement.Foreground" Value="{StaticResource SoftTextBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="14,8,12,8" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="On">
                     <Setter Property="Background" Value="{StaticResource OkBackBrush}" />
-                    <Setter Property="TextElement.Foreground" Value="{StaticResource OkTextBrush}" />
+                    <Setter Property="BorderBrush" Value="#2E8B57" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Bad">
+                    <Setter Property="Background" Value="{StaticResource BadBackBrush}" />
+                    <Setter Property="BorderBrush" Value="#A8383C" />
                 </DataTrigger>
                 <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Warn">
                     <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
-                    <Setter Property="TextElement.Foreground" Value="{StaticResource WarnTextBrush}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource WarnBrush}" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Fault">
-                    <Setter Property="Background" Value="{StaticResource BadBackBrush}" />
-                    <Setter Property="TextElement.Foreground" Value="{StaticResource BadTextBrush}" />
+            </Style.Triggers>
+        </Style>
+
+        <!-- Kilit simgesi: açılamazken kapalı ve kırmızı, açılabilirken açık ve yeşil -->
+        <Style x:Key="LockIcon" TargetType="Path">
+            <Setter Property="Data" Value="M3,11 H19 V23 H3 Z M6.5,11 V7 A4.5,4.5 0 0 1 15.5,7 V11" />
+            <Setter Property="Stroke" Value="{StaticResource MutedBrush}" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Bad">
+                    <Setter Property="Stroke" Value="{StaticResource BadBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="On">
+                    <Setter Property="Data" Value="M3,11 H19 V23 H3 Z M6.5,11 V5 A4.5,4.5 0 0 1 15.5,5 V6.5" />
+                    <Setter Property="Stroke" Value="{StaticResource OkBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Warn">
+                    <Setter Property="Data" Value="M3,11 H19 V23 H3 Z M6.5,11 V5 A4.5,4.5 0 0 1 15.5,5 V6.5" />
+                    <Setter Property="Stroke" Value="{StaticResource WarnBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Şemadaki kapak: şeritle aynı rengi alır -->
+        <Style x:Key="Lid" TargetType="Shape">
+            <Setter Property="Fill" Value="#1B2A45" />
+            <Setter Property="Stroke" Value="{StaticResource MutedBrush}" />
+            <Setter Property="StrokeThickness" Value="1.5" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="On">
+                    <Setter Property="Fill" Value="{StaticResource OkBackBrush}" />
+                    <Setter Property="Stroke" Value="{StaticResource OkBrush}" />
+                    <Setter Property="StrokeThickness" Value="2.5" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Bad">
+                    <Setter Property="Fill" Value="{StaticResource BadBackBrush}" />
+                    <Setter Property="Stroke" Value="{StaticResource BadBrush}" />
+                    <Setter Property="StrokeThickness" Value="2.5" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Warn">
+                    <Setter Property="Fill" Value="{StaticResource WarnBackBrush}" />
+                    <Setter Property="Stroke" Value="{StaticResource WarnBrush}" />
+                    <Setter Property="StrokeThickness" Value="2.5" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Şemadaki kısa kapak yazısı -->
+        <Style x:Key="LidLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="On">
+                    <Setter Property="Foreground" Value="{StaticResource OkTextBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Bad">
+                    <Setter Property="Foreground" Value="{StaticResource BadBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Warn">
+                    <Setter Property="Foreground" Value="{StaticResource WarnTextBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Pota: kapak açma sınırının üstündeyken sıcak renge boyanır -->
+        <Style x:Key="Pot" TargetType="Shape">
+            <Setter Property="Fill" Value="{StaticResource PageBrush}" />
+            <Setter Property="Stroke" Value="{StaticResource MutedBrush}" />
+            <Setter Property="StrokeThickness" Value="2" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="Hot">
+                    <Setter Property="Fill" Value="#3A1D10" />
+                    <Setter Property="Stroke" Value="{StaticResource HeatBrush}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -189,18 +264,53 @@
                 <!-- Fırın şeması -->
                 <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="16,12,16,8">
                     <DockPanel>
-                        <DockPanel DockPanel.Dock="Top" Height="30" LastChildFill="False">
-                            <TextBlock Text="FIRIN" Style="{StaticResource PanelTitle}" VerticalAlignment="Center" />
-                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding [KnLevel]}">
-                                <TextBlock Text="{Binding [KnChip]}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                            </Border>
-                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding [NH3Level]}">
-                                <TextBlock Text="{Binding [NH3Text]}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                            </Border>
-                            <Border DockPanel.Dock="Right" Style="{StaticResource Chip}" Tag="{Binding [LidLevel]}">
-                                <TextBlock Text="{Binding [LidText]}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                            </Border>
-                        </DockPanel>
+
+                        <!-- Kapak şeridi: açılabilir mi, değilse hangi koşul engelliyor -->
+                        <Border DockPanel.Dock="Top" Style="{StaticResource LidStrip}" Tag="{Binding [LidLevel]}" Margin="0,0,0,8">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
+                                    <Viewbox Width="28" Height="30" Margin="0,0,12,0">
+                                        <Canvas Width="22" Height="25">
+                                            <Path Style="{StaticResource LockIcon}" Tag="{Binding [LidLevel]}" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding [LidTitle]}" FontSize="18" FontWeight="Bold" Foreground="White" />
+                                        <TextBlock Text="{Binding [LidNote]}" FontSize="12" Foreground="{StaticResource SoftTextBrush}" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <ItemsControl ItemsSource="{Binding LidChecks}" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="16,2,0,2">
+                                                <TextBlock Text="{Binding Mark}" FontSize="15" FontWeight="Bold" Width="16" VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Level}" Value="On">
+                                                                    <Setter Property="Foreground" Value="{StaticResource OkTextBrush}" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Level}" Value="Bad">
+                                                                    <Setter Property="Foreground" Value="#FF8A8E" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Text}" FontSize="13" Foreground="White" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </DockPanel>
+                        </Border>
 
                         <Viewbox Stretch="Uniform">
                             <Canvas Width="1048" Height="564">
@@ -279,11 +389,16 @@
                                     </StackPanel>
                                 </Border>
 
-                                <!-- Fırın gövdesi, pota ve kapak -->
+                                <!-- Fırın gövdesi, pota ve kapak; kapak açılabilirlik durumunun rengini alır -->
                                 <Rectangle Canvas.Left="400" Canvas.Top="200" Width="260" Height="330" RadiusX="6" RadiusY="6" Fill="#111C30" Stroke="#55678A" StrokeThickness="2" />
-                                <Path Data="M440,225 H620 V490 Q620,505 605,505 H455 Q440,505 440,490 Z" Fill="{StaticResource PageBrush}" Stroke="{StaticResource MutedBrush}" StrokeThickness="2" />
-                                <Rectangle Canvas.Left="390" Canvas.Top="178" Width="280" Height="22" RadiusX="3" RadiusY="3" Fill="#1B2A45" Stroke="{StaticResource MutedBrush}" StrokeThickness="1.5" />
+                                <Path Style="{StaticResource Pot}" Tag="{Binding [PotLevel]}" Data="M440,225 H620 V490 Q620,505 605,505 H455 Q440,505 440,490 Z" />
+                                <Rectangle Canvas.Left="390" Canvas.Top="178" Width="280" Height="22" RadiusX="3" RadiusY="3" Style="{StaticResource Lid}" Tag="{Binding [LidLevel]}" />
                                 <Rectangle Canvas.Left="384" Canvas.Top="196" Width="292" Height="6" RadiusX="2" RadiusY="2" Fill="#B8327E" />
+
+                                <!-- Kapağın yanındaki kilit ve kısa durum yazısı -->
+                                <Path Canvas.Left="684" Canvas.Top="156" Style="{StaticResource LockIcon}" Tag="{Binding [LidLevel]}" />
+                                <TextBlock Canvas.Left="712" Canvas.Top="158" Text="Kapak" Style="{StaticResource MSmall}" />
+                                <TextBlock Canvas.Left="712" Canvas.Top="172" Text="{Binding [LidShort]}" Style="{StaticResource LidLabel}" Tag="{Binding [LidLevel]}" />
 
                                 <!-- Isıtma bölgeleri -->
                                 <Path Style="{StaticResource Hot}" Tag="{Binding [Heater]}" Data="M414,240 L430,252 L414,264 L430,276 L414,288 L430,300 L414,312 L430,324 L414,336 L430,348" />
@@ -547,7 +662,7 @@
                         <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6" LastChildFill="False">
                             <TextBlock Text="PROGRAM EĞRİSİ" Style="{StaticResource PanelTitle}" />
                             <TextBlock DockPanel.Dock="Right" Text="Ölçülen" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,0,0" />
-                            <Ellipse DockPanel.Dock="Right" Width="10" Height="10" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="18" Height="3" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
                             <TextBlock DockPanel.Dock="Right" Text="İlerleme" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,14,0" />
                             <Rectangle DockPanel.Dock="Right" Width="18" Height="4" Fill="{StaticResource OkTextBrush}" VerticalAlignment="Center" />
                             <TextBlock DockPanel.Dock="Right" Text="Plan" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,14,0" />

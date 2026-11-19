@@ -10,6 +10,12 @@
         Foreground="{StaticResource TextBrush}"
         FontFamily="Segoe UI" FontSize="14">
 
+    <!-- Windows başlık çubuğu yerine üst durum şeridi kullanılır; şerit pencereyi sürükler -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="64" GlassFrameThickness="0" ResizeBorderThickness="6"
+                      UseAeroCaptionButtons="False" CornerRadius="0" />
+    </WindowChrome.WindowChrome>
+
     <Window.Resources>
 
         <!-- Henüz yapılmamış sayfalar -->
@@ -58,140 +64,346 @@
             </Setter>
         </Style>
 
+        <!-- Pencere düğmeleri: küçült, büyüt -->
+        <Style x:Key="WindowButton" TargetType="Button">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="64" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Kapat düğmesi: üzerine gelince kırmızı olur -->
+        <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource WindowButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Back" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Back" Property="Background" Value="#E81123" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Kule lambası: sönükken koyu, yanarken parlak ve ışıltılı -->
+        <Style x:Key="Lamp" TargetType="Ellipse">
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
+            <Setter Property="Stroke" Value="#55000000" />
+            <Setter Property="StrokeThickness" Value="1" />
+        </Style>
+        <Style x:Key="LampRedStyle" TargetType="Ellipse" BasedOn="{StaticResource Lamp}">
+            <Setter Property="Fill" Value="#4A1C1E" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding LampRed}" Value="True">
+                    <Setter Property="Fill" Value="#FF3B41" />
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#FF3B41" BlurRadius="12" ShadowDepth="0" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="LampGreenStyle" TargetType="Ellipse" BasedOn="{StaticResource Lamp}">
+            <Setter Property="Fill" Value="#173D27" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding LampGreen}" Value="True">
+                    <Setter Property="Fill" Value="#3DFF8A" />
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#3DFF8A" BlurRadius="12" ShadowDepth="0" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="LampYellowStyle" TargetType="Ellipse" BasedOn="{StaticResource Lamp}">
+            <Setter Property="Fill" Value="#45380F" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding LampYellow}" Value="True">
+                    <Setter Property="Fill" Value="#FFD23B" />
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#FFD23B" BlurRadius="12" ShadowDepth="0" />
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Bağlantı düğmesi: bağlantı durumunun rengini alır, tıklanınca bağlantı panelini açar -->
+        <Style x:Key="LinkButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="{StaticResource BadBackBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource BadTextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Back" Height="32" CornerRadius="16" Padding="14,0,12,0"
+                                Background="{TemplateBinding Background}" BorderBrush="#40FFFFFF" BorderThickness="1">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding LinkText}" FontWeight="SemiBold" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" />
+                                <Path Data="M0,0 L4,4 L8,0" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6"
+                                      Margin="8,2,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Back" Property="BorderBrush" Value="#A0FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding LinkLevel}" Value="Ok">
+                    <Setter Property="Background" Value="{StaticResource OkBackBrush}" />
+                    <Setter Property="Foreground" Value="{StaticResource OkTextBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding LinkLevel}" Value="Warn">
+                    <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
+                    <Setter Property="Foreground" Value="{StaticResource WarnTextBrush}" />
+                </DataTrigger>
+                <!-- Panel açıkken düğme tıklamayı almaz; dışarı tıklama paneli kapatır, düğme yeniden açmaz -->
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="IsHitTestVisible" Value="False" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
     </Window.Resources>
 
-    <DockPanel>
+    <!-- Ekranı kaplayınca pencere kenarı ekran dışına taşar; kenar boşluğu kod tarafında ayarlanır -->
+    <Border x:Name="RootBorder">
+        <DockPanel>
 
-        <!-- Sol menü -->
-        <Border DockPanel.Dock="Left" Width="200" Background="{StaticResource PanelBrush}"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
-            <DockPanel Margin="12,20,12,16">
+            <!-- Sol menü -->
+            <Border DockPanel.Dock="Left" Width="200" Background="{StaticResource PanelBrush}"
+                    BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+                <DockPanel Margin="12,20,12,16">
 
-                <StackPanel DockPanel.Dock="Top" Margin="10,0,10,18">
-                    <TextBlock Text="RotaScada" FontSize="20" FontWeight="Bold" />
-                    <TextBlock Text="{Binding FurnaceName}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="10,14,10,0">
-                    <StackPanel>
-                        <TextBlock Text="{Binding TimeText}" FontSize="22" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding DateText}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
-                        <DockPanel Margin="0,12,0,0">
-                            <Button DockPanel.Dock="Right" Content="Çıkış" Command="{Binding LogoutCommand}"
-                                    Height="32" Padding="12,0" FontSize="13" Background="Transparent" />
-                            <TextBlock Text="{Binding UserName}" Foreground="{StaticResource SoftTextBrush}"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                        </DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Margin="10,0,10,18">
+                        <TextBlock Text="RotaScada" FontSize="20" FontWeight="Bold" />
+                        <TextBlock Text="{Binding FurnaceName}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
                     </StackPanel>
-                </Border>
 
-                <ListBox ItemsSource="{Binding MenuItems}" SelectedItem="{Binding SelectedMenu}"
-                         ItemContainerStyle="{StaticResource NavItem}"
-                         Background="Transparent" BorderThickness="0"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
-            </DockPanel>
-        </Border>
-
-        <!-- Üst durum şeridi -->
-        <Border DockPanel.Dock="Top" Height="64" Background="{StaticResource PanelBrush}"
-                BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
-            <DockPanel Margin="20,0">
-
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Height="32" CornerRadius="16" Padding="14,0" Margin="0,0,10,0"
-                            BorderBrush="{StaticResource ButtonLineBrush}" BorderThickness="1">
-                        <TextBlock Text="{Binding ModeText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="10,14,10,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding TimeText}" FontSize="22" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding DateText}" Style="{StaticResource LabelText}" Margin="0,2,0,0" />
+                            <DockPanel Margin="0,12,0,0">
+                                <Button DockPanel.Dock="Right" Content="Çıkış" Command="{Binding LogoutCommand}"
+                                        Height="32" Padding="12,0" FontSize="13" Background="Transparent" />
+                                <TextBlock Text="{Binding UserName}" Foreground="{StaticResource SoftTextBrush}"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            </DockPanel>
+                        </StackPanel>
                     </Border>
-                    <Border Height="32" CornerRadius="16" Padding="14,0" ToolTip="{Binding LinkDetail}">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Background" Value="{StaticResource BadBackBrush}" />
-                                <Setter Property="TextElement.Foreground" Value="{StaticResource BadTextBrush}" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding LinkLevel}" Value="Ok">
-                                        <Setter Property="Background" Value="{StaticResource OkBackBrush}" />
-                                        <Setter Property="TextElement.Foreground" Value="{StaticResource OkTextBrush}" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding LinkLevel}" Value="Warn">
-                                        <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
-                                        <Setter Property="TextElement.Foreground" Value="{StaticResource WarnTextBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <TextBlock Text="{Binding LinkText}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    </Border>
-                </StackPanel>
 
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Ellipse Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,12,0">
-                        <Ellipse.Style>
-                            <Style TargetType="Ellipse">
-                                <Setter Property="Fill" Value="{StaticResource IdleBrush}" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SeqLevel}" Value="Run">
-                                        <Setter Property="Fill" Value="{StaticResource OkBrush}" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding SeqLevel}" Value="Hold">
-                                        <Setter Property="Fill" Value="{StaticResource WarnBrush}" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding SeqLevel}" Value="Stop">
-                                        <Setter Property="Fill" Value="{StaticResource BadBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Ellipse.Style>
-                    </Ellipse>
-                    <TextBlock Text="{Binding SeqText}" FontSize="26" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,28,0" />
+                    <ListBox ItemsSource="{Binding MenuItems}" SelectedItem="{Binding SelectedMenu}"
+                             ItemContainerStyle="{StaticResource NavItem}"
+                             Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                </DockPanel>
+            </Border>
 
-                    <StackPanel Margin="0,0,28,0" VerticalAlignment="Center">
-                        <TextBlock Text="Adım" Style="{StaticResource LabelText}" />
-                        <TextBlock Text="{Binding StepText}" FontSize="16" FontWeight="SemiBold" />
+            <!-- Üst durum şeridi: fırının durumuna göre renklenir, her sayfada görünür -->
+            <Border DockPanel.Dock="Top" Height="64" TextElement.Foreground="White"
+                    BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding BarLevel}" Value="Idle">
+                                <Setter Property="Background" Value="#27344D" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding BarLevel}" Value="Run">
+                                <Setter Property="Background" Value="#15803D" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding BarLevel}" Value="RunDim">
+                                <Setter Property="Background" Value="#0E3A20" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding BarLevel}" Value="Wait">
+                                <Setter Property="Background" Value="#9A6700" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding BarLevel}" Value="Stop">
+                                <Setter Property="Background" Value="#B3261E" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding BarLevel}" Value="StopDim">
+                                <Setter Property="Background" Value="#4A1518" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+
+                <DockPanel>
+
+                    <!-- Sağ uç: kule, mod, bağlantı düğmesi ve pencere düğmeleri -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+
+                        <!-- Işık kulesi (yatay): kırmızı, yeşil, sarı -->
+                        <Border Height="34" CornerRadius="17" Padding="10,0" Margin="0,0,10,0"
+                                Background="#0A0F1A" BorderBrush="#40FFFFFF" BorderThickness="1"
+                                ToolTip="Işık kulesi: kırmızı, yeşil, sarı">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse Style="{StaticResource LampRedStyle}" Margin="0,0,7,0" />
+                                <Ellipse Style="{StaticResource LampGreenStyle}" Margin="0,0,7,0" />
+                                <Ellipse Style="{StaticResource LampYellowStyle}" />
+                                <TextBlock Text="simülasyon" FontSize="11" Foreground="#B8FFFFFF" Margin="8,0,0,0" VerticalAlignment="Center"
+                                           Visibility="{Binding IsSimulation, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Height="32" CornerRadius="16" Padding="14,0" Margin="0,0,10,0"
+                                Background="#33000000" BorderBrush="#40FFFFFF" BorderThickness="1">
+                            <TextBlock Text="{Binding ModeText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </Border>
+
+                        <ToggleButton x:Name="LinkButton" Style="{StaticResource LinkButtonStyle}" Margin="0,0,8,0"
+                                      IsChecked="{Binding IsConnectionOpen, Mode=TwoWay}" ToolTip="{Binding LinkDetail}" />
+
+                        <!-- Bağlantı paneli: yalnızca bilgi gösterir -->
+                        <Popup IsOpen="{Binding IsConnectionOpen, Mode=TwoWay}" StaysOpen="False"
+                               PlacementTarget="{Binding ElementName=LinkButton}" Placement="Bottom"
+                               HorizontalOffset="-200" VerticalOffset="10" AllowsTransparency="True">
+                            <Border Width="360" Margin="0,0,12,12" Padding="18,16" CornerRadius="8"
+                                    Background="{StaticResource CardBrush}" BorderBrush="{StaticResource ButtonLineBrush}" BorderThickness="1"
+                                    TextElement.Foreground="{StaticResource TextBrush}">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="Black" BlurRadius="14" ShadowDepth="3" Opacity="0.5" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <TextBlock Text="BAĞLANTI" Foreground="{StaticResource MutedBrush}" FontSize="13" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding LinkText}" FontSize="18" FontWeight="Bold" Margin="0,4,0,0" />
+                                    <TextBlock Text="{Binding LinkDetail}" Foreground="{StaticResource SoftTextBrush}" TextWrapping="Wrap" Margin="0,2,0,0" />
+
+                                    <ItemsControl ItemsSource="{Binding ConnectionRows}" Margin="0,12,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="130" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Label}" Foreground="{StaticResource MutedBrush}" FontSize="13" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <Button Content="Bağlantı ayarları" Command="{Binding OpenConnectionSettingsCommand}"
+                                            HorizontalAlignment="Left" Margin="0,14,0,0"
+                                            Visibility="{Binding CanOpenConnectionSettings, Converter={StaticResource BoolToVis}}" />
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+
+                        <Button Style="{StaticResource WindowButton}" Click="OnMinimizeClick" ToolTip="Küçült">
+                            <Path Data="M0,0 H11" Stroke="White" StrokeThickness="1.2" />
+                        </Button>
+                        <Button Style="{StaticResource WindowButton}" Click="OnMaximizeClick" ToolTip="Büyüt / Geri al">
+                            <Path x:Name="MaximizeIcon" Data="M0,0 H10 V10 H0 Z" Stroke="White" StrokeThickness="1.2" />
+                        </Button>
+                        <Button Style="{StaticResource CloseButton}" Click="OnCloseClick" ToolTip="Kapat">
+                            <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="White" StrokeThickness="1.2" />
+                        </Button>
                     </StackPanel>
-                    <StackPanel Margin="0,0,28,0" VerticalAlignment="Center">
-                        <TextBlock Text="Program kalan" Style="{StaticResource LabelText}" />
-                        <TextBlock Text="{Binding RemainText}" FontSize="16" FontWeight="SemiBold" />
+
+                    <!-- Sol: durum simgesi ve adı, bilgi hücreleri, yapılacak iş -->
+                    <Grid Margin="20,0,16,0" ClipToBounds="True">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,26,0">
+                            <Viewbox Width="32" Height="32" Margin="0,0,12,0">
+                                <Canvas Width="24" Height="24">
+                                    <Path Data="{Binding StateIcon}" Stroke="White" StrokeThickness="2"
+                                          StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                                </Canvas>
+                            </Viewbox>
+                            <TextBlock Text="{Binding StateName}" FontSize="25" FontWeight="Bold" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <ItemsControl Grid.Column="1" ItemsSource="{Binding Cells}" VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,24,0">
+                                        <TextBlock Text="{Binding Label}" FontSize="12" Foreground="#B8FFFFFF" />
+                                        <TextBlock Text="{Binding Value}" FontSize="16" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Border Grid.Column="2" BorderBrush="#40FFFFFF" BorderThickness="1,0,0,0" Padding="18,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ActionText}" FontSize="16" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding ActionText}" />
+                        </Border>
+                    </Grid>
+
+                </DockPanel>
+            </Border>
+
+            <!-- Alt alarm şeridi: her sayfada görünür -->
+            <Border DockPanel.Dock="Bottom" Height="52" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasAlarm}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <DockPanel Margin="20,0">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CommandMessage}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,16,0" />
+                        <Button Content="Sustur" Command="{Binding MuteCommand}" Margin="0,0,8,0" />
+                        <Button Content="Alarm Reset" Command="{Binding AlarmResetCommand}" />
                     </StackPanel>
-                    <StackPanel Margin="0,0,28,0" VerticalAlignment="Center">
-                        <TextBlock Text="Reçete" Style="{StaticResource LabelText}" />
-                        <TextBlock Text="{Binding RecipeText}" FontSize="16" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding AlarmCountText}" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,16,0" />
+                        <TextBlock Text="{Binding AlarmText}" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                     </StackPanel>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Şarj" Style="{StaticResource LabelText}" />
-                        <TextBlock Text="{Binding BatchText}" FontSize="16" FontWeight="SemiBold" />
-                    </StackPanel>
-                </StackPanel>
+                </DockPanel>
+            </Border>
 
-            </DockPanel>
-        </Border>
+            <!-- Seçili sayfa -->
+            <ContentControl Content="{Binding CurrentPage}" Margin="16" />
 
-        <!-- Alt alarm şeridi: her sayfada görünür -->
-        <Border DockPanel.Dock="Bottom" Height="52" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0">
-            <Border.Style>
-                <Style TargetType="Border">
-                    <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding HasAlarm}" Value="True">
-                            <Setter Property="Background" Value="{StaticResource WarnBackBrush}" />
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </Border.Style>
-            <DockPanel Margin="20,0">
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding CommandMessage}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="0,0,16,0" />
-                    <Button Content="Sustur" Command="{Binding MuteCommand}" Margin="0,0,8,0" />
-                    <Button Content="Alarm Reset" Command="{Binding AlarmResetCommand}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding AlarmCountText}" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,16,0" />
-                    <TextBlock Text="{Binding AlarmText}" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-            </DockPanel>
-        </Border>
-
-        <!-- Seçili sayfa -->
-        <ContentControl Content="{Binding CurrentPage}" Margin="16" />
-
-    </DockPanel>
+        </DockPanel>
+    </Border>
 </Window>

@@ -32,13 +32,38 @@ namespace DesktopUI.ViewModels
         public string Value { get; set; } = string.Empty;
     }
 
-    // Ana ekran: fırın şeması, program durumu, aktif adım, program eğrisi, şarj toplamları, komutlar ve aktif alarmlar
+    // Kapak şeridindeki bir koşul: işaret, metin ve sağlanıp sağlanmadığı
+    public class LidCheck : ObservableObject
+    {
+        private string _mark = "?";
+        private string _text;
+        private string _level = "Off";
+
+        public string Mark { get => _mark; set => SetProperty(ref _mark, value); }
+        public string Text { get => _text; set => SetProperty(ref _text, value); }
+        public string Level { get => _level; set => SetProperty(ref _level, value); }     // On sağlanıyor, Bad sağlanmıyor, Off bilinmiyor
+
+        // Koşulun ilk metnini alır.
+        public LidCheck(string text)
+        {
+            _text = text;
+        }
+    }
+
+    // Ana ekran: kapak şeridi, fırın şeması, program durumu, aktif adım, program eğrisi, şarj toplamları, komutlar ve aktif alarmlar
     public class OverviewViewModel : ObservableObject, IDisposable
     {
         private const int MaxAlarmRows = 3;
         private const float TimelineStartTemp = 20f;
         private const int TraceIntervalSeconds = 30;    // Canlı ölçümün çizgiye eklenme aralığı
         private const int TraceHistoryPoints = 600;     // Geçmişten okunan nokta sayısı
+        private const float HotPotFallbackTemp = 60f;   // Kapak sınırı okunamadıysa potanın sıcak sayıldığı değer
+
+        // Kapak açma sınırlarının DB204 adresleri
+        private const int LidTempNitridingAddress = 28;
+        private const int LidTempTemperAddress = 94;
+        private const int LidPressAddress = 90;
+
         private static readonly CultureInfo Tr = new CultureInfo("tr-TR");
 
         private readonly ApiClient _api;
@@ -67,11 +92,17 @@ namespace DesktopUI.ViewModels
         private double _stepProgress;
         private ProfileChartData? _chartData;
 
+        // Kapak açma sınırları; sunucudan okunana kadar boştur.
+        private int? _lidTempNitriding;
+        private int? _lidTempTemper;
+        private int? _lidPress;
+
         // Başka bir sayfaya geçilmesi istendiğinde sayfanın anahtarıyla tetiklenir.
         public event Action<string>? NavigateRequested;
 
         public ObservableCollection<AlarmRow> Alarms { get; } = new();
         public ObservableCollection<StepItem> ActiveStepItems { get; } = new();
+        public ObservableCollection<LidCheck> LidChecks { get; } = new();
 
         public IRelayCommand StartCommand { get; }
         public IAsyncRelayCommand HoldCommand { get; }
@@ -89,6 +120,9 @@ namespace DesktopUI.ViewModels
 
         // Program yürürken (vakum, ısıtma, soğutma, duraklatılmış) adım ve ilerleme gösterilir.
         private bool ProgramRunning => _seqState is 20 or 30 or 50 or 70;
+
+        // Şarj sürerken (yıkama ve korumalı bekleme dahil) ölçülen çizgi uzar; bitince durur.
+        private bool BatchActive => _seqState is 20 or 30 or 40 or 45 or 50 or 70;
 
         // Bağımlılıkları alır, komutları kurar, canlı veri olaylarına abone olur ve ilk verileri ister.
         public OverviewViewModel(ApiClient api, SessionService session, LiveDataService live, AppSettings settings)
@@ -123,6 +157,11 @@ namespace DesktopUI.ViewModels
                 () => SendAsync(ScadaCommandCode.SkipToCooling, "Soğutmaya Geç", "Kalan ısıtma adımları atlanacak ve soğutma başlayacak.\n\nSoğutmaya geçmek istiyor musunuz?"),
                 () => IsLive && canEdit && _seqState is 20 or 30 or 70);
 
+            LidChecks.Add(new LidCheck("Program"));
+            LidChecks.Add(new LidCheck("Sıcaklık"));
+            LidChecks.Add(new LidCheck("Basınç"));
+            LidChecks.Add(new LidCheck("Atmosfer"));
+
             _live.DataReceived += OnDataReceived;
             _live.AlarmsReceived += OnAlarmsReceived;
             _live.ProfileChanged += OnProfileChanged;
@@ -134,9 +173,14 @@ namespace DesktopUI.ViewModels
             Set("AlarmSummary", "yok");
             Set("ChartNote", "Çalışan program yok");
             Set("StepPanel", "Off");
+            Set("LidLevel", "Off");
+            Set("LidTitle", "KAPAK");
+            Set("LidShort", "—");
+            Set("PotLevel", "Off");
             Publish();
 
             _ = LoadAlarmsAsync();
+            _ = LoadLidLimitsAsync();
         }
 
         // Olay aboneliklerini bırakır ve zamanlayıcıyı durdurur.
@@ -288,14 +332,7 @@ namespace DesktopUI.ViewModels
             Set("Burner", Level(s.GetDeviceBit(0, 15)));
             Set("BurnerText", s.GetDeviceBit(0, 15) ? "Brülör yanıyor" : "Brülör sönük");
 
-            // Şemanın üstündeki durum etiketleri
-            bool lidLocked = s.GetDeviceBit(1, 0), lidOverride = s.GetDeviceBit(1, 12), ammonia = s.GetDeviceBit(1, 7);
-            Set("LidLevel", lidOverride ? "Fault" : lidLocked ? "On" : "Warn");
-            Set("LidText", lidOverride ? "Kapak kilidi aşılmış" : lidLocked ? "Kapak kapalı ve kilitli" : "Kapak kilitli değil");
-            Set("NH3Level", ammonia ? "Warn" : "Off");
-            Set("NH3Text", ammonia ? "İçeride amonyak var" : "Atmosfer temiz");
-            Set("KnLevel", knApprox ? "Warn" : "Off");
-            Set("KnChip", knApprox ? "Kn yaklaşık" : "Kn ölçülüyor");
+            UpdateLid(s);
 
             Set("Hint", BuildHint(s));
 
@@ -315,18 +352,94 @@ namespace DesktopUI.ViewModels
                     _ = LoadRecipeAsync();
                     _ = LoadTraceAsync();
                 }
-                else
-                {
-                    Set("ChartNote", "Çalışan program yok");
-                }
             }
 
             AddTraceSample();
             UpdateStepPanel();
+            UpdateChartNote();
             RefreshChart();
 
             Publish();
             RefreshCommands();
+        }
+
+        // Kapak şeridini ve şemadaki kapak rengini yazar: karar PLC'nin kapak iznidir, dört koşul sebebi gösterir.
+        private void UpdateLid(ScadaStatus s)
+        {
+            bool lidLocked = s.GetDeviceBit(1, 0);
+            bool lidOverride = s.GetDeviceBit(1, 12);
+            bool ammonia = s.GetDeviceBit(1, 7);
+            bool permit = s.HasPermit(1);
+
+            // Nitrasyonda ve içeride amonyak varken düşük sınır, menevişte ve oksidasyonda yüksek sınır geçerlidir.
+            bool nitriding = s.ActiveRecipeType == 2 || ammonia;
+            int? tempLimit = nitriding ? _lidTempNitriding : _lidTempTemper;
+            bool tempValid = s.IsTcValid(0);
+
+            bool programIdle = s.SeqState is 0 or 60 or 80;
+            bool? tempOk = !tempValid ? false : tempLimit.HasValue ? s.TempPota <= tempLimit.Value : null;
+            bool? pressOk = _lidPress.HasValue ? Math.Abs(s.Pressure) < _lidPress.Value : null;
+
+            SetCheck(0, programIdle, programIdle ? "Program çalışmıyor" : "Program çalışıyor");
+
+            SetCheck(1, tempOk, !tempValid
+                ? "Sıcaklık ölçülemiyor"
+                : tempLimit.HasValue ? $"Sıcaklık {N0(s.TempPota)} / {tempLimit} °C" : $"Sıcaklık {N0(s.TempPota)} °C");
+
+            SetCheck(2, pressOk, _lidPress.HasValue
+                ? $"Basınç {N1(s.Pressure)} / {_lidPress} mbar"
+                : $"Basınç {N1(s.Pressure)} mbar");
+
+            SetCheck(3, !ammonia, ammonia ? "İçeride amonyak var" : "Atmosfer temiz");
+
+            if (lidOverride)
+            {
+                Set("LidLevel", "Warn");
+                Set("LidTitle", "KAPAK KİLİDİ AŞILMIŞ");
+                Set("LidShort", "KİLİT AŞILMIŞ");
+                Set("LidNote", "Kilit elle aşıldı; koşullar denetlenmiyor");
+            }
+            else if (permit)
+            {
+                Set("LidLevel", "On");
+                Set("LidTitle", "KAPAK AÇILABİLİR");
+                Set("LidShort", "AÇILABİLİR");
+                Set("LidNote", lidLocked ? "Şu an kapalı ve kilitli" : "Şu an kilitli değil");
+            }
+            else
+            {
+                bool allOk = programIdle && tempOk == true && pressOk == true && !ammonia;
+
+                Set("LidLevel", "Bad");
+                Set("LidTitle", "KAPAK AÇILAMAZ");
+                Set("LidShort", "AÇILAMAZ");
+                Set("LidNote", allOk ? "Koşullar uygun görünüyor ama PLC izin vermiyor" : "Kırmızı koşullar sağlanınca açılabilir");
+            }
+
+            // Pota, kapak açma sınırının üstündeyken sıcak renge boyanır.
+            float hotLimit = tempLimit ?? HotPotFallbackTemp;
+            Set("PotLevel", tempValid && s.TempPota > hotLimit ? "Hot" : "Off");
+        }
+
+        // Kapak şeridindeki bir koşulun işaretini, rengini ve metnini ayarlar; sonuç bilinmiyorsa soru işareti koyar.
+        private void SetCheck(int index, bool? ok, string text)
+        {
+            var check = LidChecks[index];
+            check.Text = text;
+            check.Level = ok == null ? "Off" : ok.Value ? "On" : "Bad";
+            check.Mark = ok == null ? "?" : ok.Value ? "✓" : "✕";
+        }
+
+        // Kapak açma sıcaklık ve basınç sınırlarını PLC parametrelerinden okur.
+        private async Task LoadLidLimitsAsync()
+        {
+            var result = await _api.GetAsync<List<ParamValueDto>>("api/settings/parameters");
+            if (!result.IsSuccess || result.Data == null)
+                return;
+
+            _lidTempNitriding = result.Data.FirstOrDefault(p => p.Address == LidTempNitridingAddress)?.Value;
+            _lidTempTemper = result.Data.FirstOrDefault(p => p.Address == LidTempTemperAddress)?.Value;
+            _lidPress = result.Data.FirstOrDefault(p => p.Address == LidPressAddress)?.Value;
         }
 
         // PLC'de çalışan reçeteyi (DB203) okuyup zaman çizgisini kurar.
@@ -349,8 +462,8 @@ namespace DesktopUI.ViewModels
             _timeline = RecipeTimeline.Build(_recipe, TimelineStartTemp);
             _shownStepNo = -1;
 
-            Set("ChartNote", $"{_recipe.RecipeName} · adımların üzerine gelince ayrıntıları görünür");
             UpdateStepPanel();
+            UpdateChartNote();
             RefreshChart();
             Publish();
         }
@@ -383,10 +496,10 @@ namespace DesktopUI.ViewModels
             RefreshChart();
         }
 
-        // Şarj sürerken ölçülen sıcaklığı belirli aralıkla çizgiye ekler; programın hangi adımda olduğuna bakmaz.
+        // Şarj sürerken ölçülen sıcaklığı belirli aralıkla çizgiye ekler; şarj bittiyse çizgi uzamaz.
         private void AddTraceSample()
         {
-            if (_batchId <= 0)
+            if (_batchId <= 0 || !BatchActive)
                 return;
 
             DateTime now = DateTime.Now;
@@ -465,7 +578,20 @@ namespace DesktopUI.ViewModels
             ActiveStepItems.Add(new StepItem { Label = label, Value = value });
         }
 
-        // Program eğrisini zaman çizgisinden üretir; program yürüyorsa ilerleme çizgisini, şarj sürüyorsa saat zamanına göre ölçülen sıcaklık çizgisini ekler.
+        // Eğrinin altındaki notu yazar: şarj yoksa, sürüyorsa ya da bittiyse farklı metin gösterir.
+        private void UpdateChartNote()
+        {
+            if (_batchId <= 0)
+                Set("ChartNote", "Çalışan program yok");
+            else if (_recipe == null)
+                return;
+            else if (BatchActive)
+                Set("ChartNote", $"{_recipe.RecipeName} · adımların üzerine gelince ayrıntıları görünür");
+            else
+                Set("ChartNote", $"Son program: {_recipe.RecipeName} · şarj tamamlandı");
+        }
+
+        // Program eğrisini zaman çizgisinden üretir; program yürüyorsa ilerleme çizgisini, şarj varsa saat zamanına göre ölçülen sıcaklık çizgisini ekler.
         private void RefreshChart()
         {
             if (_timeline == null)
@@ -497,7 +623,7 @@ namespace DesktopUI.ViewModels
             ChartData = data;
         }
 
-        // Ölçülen sıcaklık kayıtlarını şarjın başlangıcından itibaren geçen saate göre dizer ve şu anki değerle bitirir.
+        // Ölçülen sıcaklık kayıtlarını şarjın başlangıcından itibaren geçen saate göre dizer; şarj sürüyorsa şu anki değerle bitirir.
         private List<Point> BuildRealTrace(DateTime start)
         {
             var points = new List<Point>();
@@ -508,6 +634,9 @@ namespace DesktopUI.ViewModels
                 if (hours >= 0)
                     points.Add(new Point(hours, sample.Temp));
             }
+
+            if (!BatchActive)
+                return points;
 
             double nowHours = (DateTime.Now - start).TotalHours;
             if (nowHours >= 0 && (points.Count == 0 || nowHours >= points[^1].X))

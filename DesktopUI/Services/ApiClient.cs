@@ -13,6 +13,9 @@ namespace DesktopUI.Services
         public bool IsSuccess { get; set; }
         public string? Message { get; set; }
         public T? Data { get; set; }
+
+        // İstek sunucuya hiç ulaşmadıysa (sunucu kapalı, ağ yok, zaman aşımı) true olur; sunucunun verdiği ret cevaplarında false kalır.
+        public bool IsUnreachable { get; set; }
     }
 
     // Giriş ucunun döndürdüğü token
@@ -117,11 +120,11 @@ namespace DesktopUI.Services
             }
             catch (HttpRequestException ex)
             {
-                return Fail<string>($"Sunucuya ulaşılamıyor: {ex.Message}");
+                return Unreachable<string>($"Sunucuya ulaşılamıyor: {ex.Message}");
             }
             catch (TaskCanceledException)
             {
-                return Fail<string>("Sunucu zamanında cevap vermedi.");
+                return Unreachable<string>("Sunucu zamanında cevap vermedi.");
             }
         }
 
@@ -153,6 +156,9 @@ namespace DesktopUI.Services
                 {
                     if (!response.IsSuccessStatusCode)
                         wrapped.IsSuccess = false;
+
+                    // Bu bilgi yalnızca ekran tarafında üretilir; sunucudan gelen cevapta olamaz.
+                    wrapped.IsUnreachable = false;
                     return wrapped;
                 }
 
@@ -168,11 +174,11 @@ namespace DesktopUI.Services
             }
             catch (HttpRequestException ex)
             {
-                return Fail<T>($"Sunucuya ulaşılamıyor: {ex.Message}");
+                return Unreachable<T>($"Sunucuya ulaşılamıyor: {ex.Message}");
             }
             catch (TaskCanceledException)
             {
-                return Fail<T>("Sunucu zamanında cevap vermedi.");
+                return Unreachable<T>("Sunucu zamanında cevap vermedi.");
             }
         }
 
@@ -180,6 +186,12 @@ namespace DesktopUI.Services
         private static ApiResult<T> Fail<T>(string message)
         {
             return new ApiResult<T> { IsSuccess = false, Message = message };
+        }
+
+        // Sunucuya ulaşılamadığını bildiren başarısız sonuç üretir.
+        private static ApiResult<T> Unreachable<T>(string message)
+        {
+            return new ApiResult<T> { IsSuccess = false, Message = message, IsUnreachable = true };
         }
 
         // Metni verilen tipe çevirmeyi dener; olmazsa varsayılan değeri döner.

@@ -1,4 +1,5 @@
-﻿using DesktopUI.Services;
+﻿using DesktopUI.Helpers;
+using DesktopUI.Services;
 using DesktopUI.ViewModels;
 using DesktopUI.Views;
 using System.Windows;
@@ -16,42 +17,57 @@ namespace DesktopUI
         private ShellWindow? _shellWindow;
         private bool _switchingWindow;
 
-        // Program açılışı: ayarları okur, saklı token varsa doğrular; geçerliyse ana pencereyi, değilse giriş ekranını açar.
+        // Program açılışı: pencere temasını kaydeder, ayarları okur, saklı token varsa doğrular; geçerliyse ana pencereyi, değilse giriş ekranını açar.
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // Açılan her pencerenin (ana pencere, iletişim kutuları) başlık çubuğu koyu yapılır.
+            EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent, new RoutedEventHandler(OnAnyWindowLoaded));
 
             _settings = AppSettings.Load();
             _api = new ApiClient(_settings.ServerUrl);
             _session = new SessionService();
             _api.Unauthorized += () => Dispatcher.BeginInvoke(OnUnauthorized);
 
-            string? message = null;
             string? savedToken = _session.LoadSavedToken();
 
-            if (savedToken != null)
+            if (savedToken == null)
             {
-                _api.SetToken(savedToken);
-                var user = await _api.GetCurrentUserAsync();
-
-                if (user.IsSuccess && user.Data != null)
-                {
-                    _session.Begin(savedToken, user.Data, remember: true);
-                    ShowShell();
-                    return;
-                }
-
-                _api.SetToken(null);
-                message = user.Message;
+                ShowLogin(null);
+                return;
             }
 
-            ShowLogin(message);
+            _api.SetToken(savedToken);
+            var user = await _api.GetCurrentUserAsync();
+
+            if (user.IsSuccess && user.Data != null)
+            {
+                _session.Begin(savedToken, user.Data, remember: true);
+                ShowShell();
+                return;
+            }
+
+            _api.SetToken(null);
+
+            // Sunucu henüz ayakta değilse saklı oturum atılmaz; giriş ekranı sunucuyu bekler ve gelince oturumu kendiliğinden açar.
+            if (user.IsUnreachable)
+                ShowLogin(user.Message, serverUnreachable: true, pendingToken: savedToken);
+            else
+                ShowLogin(user.Message);
         }
 
-        // Giriş ekranını açar; giriş başarılı olunca ana pencereye geçer.
-        private void ShowLogin(string? message)
+        // Yüklenen pencerenin başlık çubuğunu koyu temaya çevirir.
+        private static void OnAnyWindowLoaded(object sender, RoutedEventArgs e)
         {
-            var viewModel = new LoginViewModel(_api, _session, _settings.ServerUrl, message);
+            if (sender is Window window)
+                WindowTheme.ApplyDarkTitleBar(window);
+        }
+
+        // Giriş ekranını açar; giriş başarılı olunca (elle ya da saklı oturumla) ana pencereye geçer.
+        private void ShowLogin(string? message, bool serverUnreachable = false, string? pendingToken = null)
+        {
+            var viewModel = new LoginViewModel(_api, _session, _settings.ServerUrl, message, serverUnreachable, pendingToken);
             var window = new LoginWindow(viewModel);
             bool loggedIn = false;
 
@@ -87,6 +103,9 @@ namespace DesktopUI
                 if (!_switchingWindow)
                     Shutdown();
             };
+
+            // İletişim kutuları ana pencerenin üstünde açılsın diye ana pencere olarak işaretlenir.
+            MainWindow = _shellWindow;
             _shellWindow.Show();
         }
 
