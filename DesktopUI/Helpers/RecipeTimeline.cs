@@ -16,9 +16,20 @@ namespace DesktopUI.Helpers
         public double EndTemp { get; set; }
     }
 
+    // Ölçülen sıcaklığın bir kaydı: ne zaman, hangi adımda, kaç derece
+    public class TraceSample
+    {
+        public DateTime Time { get; set; }
+        public int StepNo { get; set; }
+        public double Temp { get; set; }
+    }
+
     // Reçeteyi tek bir sıcaklık-zaman çizgisine çevirir; program konumu ile grafik konumu arasında dönüşüm yapar.
     public class RecipeTimeline
     {
+        private const double VacuumShare = 0.03;    // Vakum adımının genişliği: toplam ısıtma süresinin oranı
+        private const double CoolingShare = 0.15;   // Soğutma adımının genişliği: toplam ısıtma süresinin oranı
+
         public List<TimelineStep> Steps { get; } = new();
         public double StartTemp { get; private set; }
         public double HeatStart { get; private set; }   // İlk ısıtma adımının başladığı X
@@ -26,12 +37,12 @@ namespace DesktopUI.Helpers
         public double XMax { get; private set; } = 1;
         public double YMax { get; private set; } = 150;
 
-        // Reçetenin adımlarını sırayla zaman çizgisine dizer. Vakum ve soğutmanın süresi bilinmediği için sabit genişlik verilir.
+        // Reçetenin adımlarını sırayla zaman çizgisine dizer. Vakum ve soğutmanın süresi bilinmediği için ısıtma süresine oranlı dar bir genişlik verilir.
         public static RecipeTimeline Build(Recipe recipe, float startTemp)
         {
             var ordered = recipe.Steps.OrderBy(s => s.StepNo).ToList();
             double heatHours = ordered.Where(s => s.StepType == 2).Sum(s => Math.Max(0, s.StepTime)) / 60.0;
-            double unit = Math.Max(0.2, heatHours * 0.07);
+            double baseHours = heatHours > 0 ? heatHours : 1;
 
             var timeline = new RecipeTimeline { StartTemp = startTemp };
             double x = 0;
@@ -43,9 +54,9 @@ namespace DesktopUI.Helpers
             {
                 double width = step.StepType switch
                 {
-                    1 => unit,
+                    1 => baseHours * VacuumShare,
                     2 => Math.Max(0, step.StepTime) / 60.0,
-                    3 => unit * 2,
+                    3 => baseHours * CoolingShare,
                     _ => 0
                 };
 
@@ -131,6 +142,59 @@ namespace DesktopUI.Helpers
             }
 
             return line;
+        }
+
+        // Ölçülen sıcaklık kayıtlarını zaman çizgisine yerleştirir: her adımın kayıtları o adımın bölgesine, son adımınkiler şu anki konuma kadar yayılır.
+        public List<Point> BuildTrace(IReadOnlyList<TraceSample> samples, double nowX)
+        {
+            // Kayıtlar art arda aynı adımda olanlar bir grup olacak şekilde ayrılır.
+            var groups = new List<TraceGroup>();
+
+            foreach (var sample in samples)
+            {
+                var step = Steps.FirstOrDefault(s => s.Step.StepNo == sample.StepNo);
+                if (step == null)
+                    continue;
+
+                var last = groups.Count > 0 ? groups[^1] : null;
+                if (last != null)
+                    last.End = sample.Time;
+
+                if (last != null && last.Step == step)
+                {
+                    last.Items.Add(sample);
+                    continue;
+                }
+
+                // Geri bir adıma gidilmişse o adımdan sonra çizilmiş kısım atılır; çizgi kendi üstüne dönmez.
+                while (groups.Count > 0 && groups[^1].Step.Step.StepNo >= step.Step.StepNo)
+                    groups.RemoveAt(groups.Count - 1);
+
+                var group = new TraceGroup { Step = step, End = sample.Time };
+                group.Items.Add(sample);
+                groups.Add(group);
+            }
+
+            var points = new List<Point>();
+
+            for (int i = 0; i < groups.Count; i++)
+            {
+                var group = groups[i];
+                bool isLast = i == groups.Count - 1;
+
+                // Biten adım bölgesinin sonuna kadar, süren adım programın şu anki yerine kadar yayılır.
+                double xEnd = isLast && nowX >= group.Step.X1 ? Math.Min(nowX, group.Step.X2) : group.Step.X2;
+                DateTime start = group.Items[0].Time;
+                double seconds = (group.End - start).TotalSeconds;
+
+                foreach (var item in group.Items)
+                {
+                    double fraction = seconds > 0 ? Math.Clamp((item.Time - start).TotalSeconds / seconds, 0, 1) : 1;
+                    points.Add(new Point(group.Step.X1 + fraction * (xEnd - group.Step.X1), item.Temp));
+                }
+            }
+
+            return points;
         }
 
         // Programın bulunduğu yeri grafik konumuna çevirir: vakumda zaman aşımına, ısıtmada adım süresine, soğutmada sıcaklığın inişine göre.
@@ -316,6 +380,14 @@ namespace DesktopUI.Helpers
             }
 
             return targets[^1];
+        }
+
+        // Art arda aynı adımda alınmış ölçüm kayıtları ve o adımdan çıkılan an
+        private class TraceGroup
+        {
+            public TimelineStep Step { get; set; } = new TimelineStep();
+            public List<TraceSample> Items { get; } = new();
+            public DateTime End { get; set; }
         }
     }
 }

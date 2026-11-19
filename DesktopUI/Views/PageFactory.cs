@@ -45,6 +45,24 @@ namespace DesktopUI.Views
                         return (new RecipesView(viewModel), viewModel);
                     }
 
+                case "trend":
+                    {
+                        var viewModel = new TrendViewModel(_api);
+                        return (new TrendView(viewModel), viewModel);
+                    }
+
+                case "alarms":
+                    {
+                        var viewModel = new AlarmsViewModel(_api, _live);
+                        return (new AlarmsView(viewModel), viewModel);
+                    }
+
+                case "batches":
+                    {
+                        var viewModel = new BatchesViewModel(_api, _session);
+                        return (new BatchesView(viewModel), null);
+                    }
+
                 default:
                     return (new PlaceholderPageViewModel(title), null);
             }

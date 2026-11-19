@@ -37,6 +37,8 @@ namespace DesktopUI.ViewModels
     {
         private const int MaxAlarmRows = 3;
         private const float TimelineStartTemp = 20f;
+        private const int TraceIntervalSeconds = 30;    // Canlı ölçümün çizgiye eklenme aralığı
+        private const int TraceHistoryPoints = 600;     // Geçmişten okunan nokta sayısı
         private static readonly CultureInfo Tr = new CultureInfo("tr-TR");
 
         private readonly ApiClient _api;
@@ -45,10 +47,13 @@ namespace DesktopUI.ViewModels
         private readonly AppSettings _settings;
         private readonly DispatcherTimer _timer;
         private readonly Dictionary<string, string> _values = new();
+        private readonly List<TraceSample> _trace = new();
 
         private Recipe? _recipe;
         private RecipeTimeline? _timeline;
         private DateTime _lastDataAt = DateTime.MinValue;
+        private DateTime _lastTraceAt = DateTime.MinValue;
+        private DateTime? _traceStart;                  // Şarjın başladığı an; ölçülen çizginin sıfır noktası
         private bool _plcOk;
         private bool _isLive;
         private short _seqState;
@@ -294,20 +299,29 @@ namespace DesktopUI.ViewModels
 
             Set("Hint", BuildHint(s));
 
-            // Şarj değiştiyse çalışan reçete yeniden okunur; şarj yoksa eğri ve adım paneli boşaltılır.
+            // Şarj değiştiyse çalışan reçete ve ölçüm geçmişi yeniden okunur; şarj yoksa eğri ve adım paneli boşaltılır.
             if (s.BatchId != _batchId)
             {
                 _batchId = s.BatchId;
                 _recipe = null;
                 _timeline = null;
                 _shownStepNo = -1;
+                _trace.Clear();
+                _traceStart = null;
+                _lastTraceAt = DateTime.MinValue;
 
                 if (_batchId > 0)
+                {
                     _ = LoadRecipeAsync();
+                    _ = LoadTraceAsync();
+                }
                 else
+                {
                     Set("ChartNote", "Çalışan program yok");
+                }
             }
 
+            AddTraceSample();
             UpdateStepPanel();
             RefreshChart();
 
@@ -339,6 +353,52 @@ namespace DesktopUI.ViewModels
             UpdateStepPanel();
             RefreshChart();
             Publish();
+        }
+
+        // Şarjın başından bu yana ölçülen pota sıcaklığını ve şarjın başlangıç anını sunucudan okur; sayfa açıkken biriken canlı kayıtlar sona eklenir.
+        private async Task LoadTraceAsync()
+        {
+            int batchId = _batchId;
+
+            var result = await _api.GetAsync<TrendDataDto>($"api/trends/batch/{batchId}?tags=TempPota&points={TraceHistoryPoints}");
+            if (batchId != _batchId || !result.IsSuccess || result.Data == null)
+                return;
+
+            var temps = result.Data.Series.FirstOrDefault(s => s.Tag == "TempPota");
+            if (temps == null)
+                return;
+
+            int count = Math.Min(result.Data.Timestamps.Count, temps.Values.Count);
+            var history = new List<TraceSample>();
+
+            for (int i = 0; i < count; i++)
+                history.Add(new TraceSample { Time = result.Data.Timestamps[i], Temp = temps.Values[i] });
+
+            DateTime lastTime = history.Count > 0 ? history[^1].Time : DateTime.MinValue;
+            history.AddRange(_trace.Where(t => t.Time > lastTime));
+
+            _trace.Clear();
+            _trace.AddRange(history);
+            _traceStart = result.Data.Start;
+            RefreshChart();
+        }
+
+        // Şarj sürerken ölçülen sıcaklığı belirli aralıkla çizgiye ekler; programın hangi adımda olduğuna bakmaz.
+        private void AddTraceSample()
+        {
+            if (_batchId <= 0)
+                return;
+
+            DateTime now = DateTime.Now;
+            if ((now - _lastTraceAt).TotalSeconds < TraceIntervalSeconds)
+                return;
+
+            _lastTraceAt = now;
+
+            // Geçmiş henüz okunmadıysa çizgi geçici olarak ilk canlı kayıttan başlar; geçmiş gelince gerçek başlangıca çekilir.
+            _traceStart ??= now;
+
+            _trace.Add(new TraceSample { Time = now, StepNo = _activeStep, Temp = _tempPota });
         }
 
         // Aktif adım panelini çalışan adımın değerleriyle doldurur; adım değişmediyse dokunmaz.
@@ -405,7 +465,7 @@ namespace DesktopUI.ViewModels
             ActiveStepItems.Add(new StepItem { Label = label, Value = value });
         }
 
-        // Program eğrisini zaman çizgisinden üretir; program yürüyorsa ilerleme çizgisini ve ölçülen sıcaklığı ekler.
+        // Program eğrisini zaman çizgisinden üretir; program yürüyorsa ilerleme çizgisini, şarj sürüyorsa saat zamanına göre ölçülen sıcaklık çizgisini ekler.
         private void RefreshChart()
         {
             if (_timeline == null)
@@ -421,13 +481,39 @@ namespace DesktopUI.ViewModels
             {
                 double nowX = _timeline.GetPositionX(_activeStep, _stepElapsed, _tempPota);
                 if (nowX >= 0)
-                {
                     data.Progress = _timeline.GetProgressLine(nowX);
-                    data.Actual = new List<Point> { new Point(nowX, _tempPota) };
-                }
+            }
+
+            if (_batchId > 0 && _traceStart.HasValue)
+            {
+                var trace = BuildRealTrace(_traceStart.Value);
+                data.Actual = trace;
+
+                // Şarj plandan uzun sürdüyse grafik ölçülen çizgiyi içine alacak kadar genişler.
+                if (trace.Count > 0 && trace[^1].X > data.XMax)
+                    data.XMax = trace[^1].X * 1.03;
             }
 
             ChartData = data;
+        }
+
+        // Ölçülen sıcaklık kayıtlarını şarjın başlangıcından itibaren geçen saate göre dizer ve şu anki değerle bitirir.
+        private List<Point> BuildRealTrace(DateTime start)
+        {
+            var points = new List<Point>();
+
+            foreach (var sample in _trace)
+            {
+                double hours = (sample.Time - start).TotalHours;
+                if (hours >= 0)
+                    points.Add(new Point(hours, sample.Temp));
+            }
+
+            double nowHours = (DateTime.Now - start).TotalHours;
+            if (nowHours >= 0 && (points.Count == 0 || nowHours >= points[^1].X))
+                points.Add(new Point(nowHours, _tempPota));
+
+            return points;
         }
 
         // Komut satırının sağında gösterilen açıklamayı üretir: duraklatma sebebi ya da izni olmayan istek.

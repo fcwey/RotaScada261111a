@@ -16,7 +16,7 @@ namespace Business.Concrete
     {
         private const int MinPoints = 10;
         private const int MaxPoints = 5000;
-        private const int MaxTagsPerQuery = 16;
+        private const int MaxTagsPerQuery = 20;
 
         // Grafiği çizilebilecek ölçümler. Tag adı, ProcessDataLog sınıfındaki alan adıyla aynıdır.
         private static readonly List<TrendTagDto> TrendTags = new List<TrendTagDto>
@@ -36,7 +36,8 @@ namespace Business.Concrete
             new TrendTagDto { Tag = "Kn",          Unit = "",       Description = "Nitrasyon potansiyeli" },
             new TrendTagDto { Tag = "HeatOutAlt",  Unit = "%",      Description = "Alt ısıtma çıkışı" },
             new TrendTagDto { Tag = "HeatOutUst",  Unit = "%",      Description = "Üst ısıtma çıkışı" },
-            new TrendTagDto { Tag = "FanSpeedAct", Unit = "%",      Description = "Fan hızı" }
+            new TrendTagDto { Tag = "FanSpeedAct", Unit = "%",      Description = "Fan hızı" },
+            new TrendTagDto { Tag = "ActiveStep",  Unit = "",       Description = "Çalışan adım numarası (dilimin en yüksek değeri kullanılmalı)" }
         };
 
         // Telemetri kaydını, BatchId boşsa aktif şarjın kimliğiyle etiketleyip veritabanına ekler.
@@ -309,6 +310,7 @@ namespace Business.Concrete
             "HeatOutAlt" => log.HeatOutAlt,
             "HeatOutUst" => log.HeatOutUst,
             "FanSpeedAct" => log.FanSpeedAct,
+            "ActiveStep" => log.ActiveStep,
             _ => 0f
         };
     }
