@@ -13,7 +13,7 @@ namespace DesktopUI.ViewModels
     public class UserRow
     {
         public int Id { get; set; }
-        public string Email { get; set; } = string.Empty;
+        public string UserName { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public string StatusText { get; set; } = string.Empty;
@@ -31,10 +31,10 @@ namespace DesktopUI.ViewModels
         public bool IsChecked { get => _isChecked; set => SetProperty(ref _isChecked, value); }
     }
 
-    // Kullanıcılar sekmesi: kullanıcı listesi, rol atama, hesap açma ve kapatma, şifre sıfırlama, yeni kullanıcı
+    // Kullanıcılar sekmesi: kullanıcı listesi, rol atama, hesap açma ve kapatma, şifre değiştirme, yeni kullanıcı
     public class UsersViewModel : ObservableObject
     {
-        private const int MinPasswordLength = 6;
+        private const int MinUserNameLength = 2;
 
         // Rol adlarının operatöre gösterilen açıklamaları
         private static readonly Dictionary<string, string> RoleDescriptions = new()
@@ -58,7 +58,7 @@ namespace DesktopUI.ViewModels
         private List<string> _roleNames = new();
         private UserRow? _selectedUser;
         private string _message = string.Empty;
-        private string _newEmail = string.Empty;
+        private string _newUserName = string.Empty;
         private string _newFirstName = string.Empty;
         private string _newLastName = string.Empty;
         private string _newMessage = string.Empty;
@@ -90,11 +90,23 @@ namespace DesktopUI.ViewModels
         }
 
         public bool HasSelection => SelectedUser != null;
-        public string SelectedTitle => SelectedUser == null ? "Listeden bir kullanıcı seçin" : $"{SelectedUser.FullName} · {SelectedUser.Email}";
+
+        // Seçili kullanıcının başlığı: kullanıcı adı ve varsa adı soyadı.
+        public string SelectedTitle
+        {
+            get
+            {
+                if (SelectedUser == null)
+                    return "Listeden bir kullanıcı seçin";
+
+                return SelectedUser.FullName.Length == 0 ? SelectedUser.UserName : $"{SelectedUser.UserName} · {SelectedUser.FullName}";
+            }
+        }
+
         public string ToggleActiveText => SelectedUser != null && !SelectedUser.IsActive ? "Hesabı Aç" : "Hesabı Kapat";
 
         public string Message { get => _message; private set => SetProperty(ref _message, value); }
-        public string NewEmail { get => _newEmail; set => SetProperty(ref _newEmail, value); }
+        public string NewUserName { get => _newUserName; set => SetProperty(ref _newUserName, value); }
         public string NewFirstName { get => _newFirstName; set => SetProperty(ref _newFirstName, value); }
         public string NewLastName { get => _newLastName; set => SetProperty(ref _newLastName, value); }
         public string NewMessage { get => _newMessage; private set => SetProperty(ref _newMessage, value); }
@@ -123,6 +135,7 @@ namespace DesktopUI.ViewModels
                     FillRoles(NewRoles, new List<string>());
             }
 
+            // Sunucuda kullanıcı adı Email alanında taşınır.
             var result = await _api.GetAsync<List<UserListDto>>("api/users");
             if (!result.IsSuccess || result.Data == null)
             {
@@ -138,7 +151,7 @@ namespace DesktopUI.ViewModels
                 Users.Add(new UserRow
                 {
                     Id = user.Id,
-                    Email = user.Email,
+                    UserName = user.Email,
                     FullName = $"{user.FirstName} {user.LastName}".Trim(),
                     IsActive = user.IsActive,
                     StatusText = user.IsActive ? string.Empty : "kapalı",
@@ -183,7 +196,7 @@ namespace DesktopUI.ViewModels
 
             var result = await _api.PutAsync<JsonElement>($"api/users/{user.Id}/roles", roles);
             Message = result.IsSuccess
-                ? $"{DateTime.Now:HH:mm:ss}  {user.Email} rolleri kaydedildi. Değişiklik kullanıcının sonraki isteğinde geçerli olur."
+                ? $"{DateTime.Now:HH:mm:ss}  {user.UserName} rolleri kaydedildi. Değişiklik kullanıcının sonraki isteğinde geçerli olur."
                 : result.Message ?? "Roller kaydedilemedi.";
 
             if (result.IsSuccess)
@@ -208,7 +221,7 @@ namespace DesktopUI.ViewModels
             if (!activate)
             {
                 var answer = MessageBox.Show(
-                    $"{user.Email} hesabı kapatılacak; kullanıcı giriş yapamaz ve açık oturumu da çalışmaz.\n\nHesabı kapatmak istiyor musunuz?",
+                    $"{user.UserName} hesabı kapatılacak; kullanıcı giriş yapamaz ve açık oturumu da çalışmaz.\n\nHesabı kapatmak istiyor musunuz?",
                     "Hesabı kapat", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
 
                 if (answer != MessageBoxResult.Yes)
@@ -217,63 +230,58 @@ namespace DesktopUI.ViewModels
 
             var result = await _api.PutAsync<JsonElement>($"api/users/{user.Id}/status?active={(activate ? "true" : "false")}");
             Message = result.IsSuccess
-                ? $"{DateTime.Now:HH:mm:ss}  {user.Email} hesabı {(activate ? "açıldı" : "kapatıldı")}."
+                ? $"{DateTime.Now:HH:mm:ss}  {user.UserName} hesabı {(activate ? "açıldı" : "kapatıldı")}."
                 : result.Message ?? "Hesap durumu değiştirilemedi.";
 
             if (result.IsSuccess)
                 await LoadAsync();
         }
 
-        // Seçili kullanıcının şifresini verilen şifreyle değiştirir; başarılıysa true döner.
+        // Seçili kullanıcının şifresini verilen şifreyle değiştirir; boşsa onay alıp hesabı şifresiz yapar. Başarılıysa true döner.
         public async Task<bool> ResetPasswordAsync(string password)
         {
             var user = SelectedUser;
             if (user == null)
                 return false;
 
-            if (string.IsNullOrEmpty(password) || password.Length < MinPasswordLength)
+            password ??= string.Empty;
+
+            if (password.Length == 0)
             {
-                Message = $"Şifre en az {MinPasswordLength} karakter olmalı.";
-                return false;
+                var answer = MessageBox.Show(
+                    $"Şifre kutusu boş. {user.UserName} hesabı şifresiz olacak: kullanıcı adını bilen herkes bu hesabın yetkileriyle giriş yapabilir.\n\nŞifreyi kaldırmak istiyor musunuz?",
+                    "Şifreyi kaldır", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+
+                if (answer != MessageBoxResult.Yes)
+                    return false;
             }
 
             var result = await _api.PutAsync<JsonElement>($"api/users/{user.Id}/password", new UserPasswordDto { NewPassword = password });
             Message = result.IsSuccess
-                ? $"{DateTime.Now:HH:mm:ss}  {user.Email} şifresi değiştirildi."
+                ? $"{DateTime.Now:HH:mm:ss}  {user.UserName} {(password.Length == 0 ? "şifresi kaldırıldı" : "şifresi değiştirildi")}."
                 : result.Message ?? "Şifre değiştirilemedi.";
 
             return result.IsSuccess;
         }
 
-        // Formdaki bilgilerle ve verilen şifreyle yeni kullanıcı açar; başarılıysa true döner.
+        // Formdaki bilgilerle ve verilen şifreyle (boş olabilir) yeni kullanıcı açar; başarılıysa true döner.
         public async Task<bool> CreateUserAsync(string password)
         {
-            string email = (NewEmail ?? string.Empty).Trim();
+            string userName = (NewUserName ?? string.Empty).Trim();
 
-            if (email.Length == 0 || !email.Contains('@'))
+            if (userName.Length < MinUserNameLength)
             {
-                NewMessage = "Geçerli bir e-posta girin.";
+                NewMessage = $"Kullanıcı adı en az {MinUserNameLength} karakter olmalı.";
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(NewFirstName) || string.IsNullOrWhiteSpace(NewLastName))
-            {
-                NewMessage = "Ad ve soyad girilmeli.";
-                return false;
-            }
-
-            if (string.IsNullOrEmpty(password) || password.Length < MinPasswordLength)
-            {
-                NewMessage = $"Şifre en az {MinPasswordLength} karakter olmalı.";
-                return false;
-            }
-
+            // Sunucuda kullanıcı adı Email alanında taşınır.
             var dto = new UserCreateDto
             {
-                Email = email,
-                FirstName = NewFirstName.Trim(),
-                LastName = NewLastName.Trim(),
-                Password = password,
+                Email = userName,
+                FirstName = (NewFirstName ?? string.Empty).Trim(),
+                LastName = (NewLastName ?? string.Empty).Trim(),
+                Password = password ?? string.Empty,
                 Roles = NewRoles.Where(r => r.IsChecked).Select(r => r.Name).ToList()
             };
 
@@ -284,8 +292,8 @@ namespace DesktopUI.ViewModels
                 return false;
             }
 
-            NewMessage = $"{DateTime.Now:HH:mm:ss}  {email} açıldı.";
-            NewEmail = string.Empty;
+            NewMessage = $"{DateTime.Now:HH:mm:ss}  {userName} açıldı{(dto.Password.Length == 0 ? " (şifresiz)" : string.Empty)}.";
+            NewUserName = string.Empty;
             NewFirstName = string.Empty;
             NewLastName = string.Empty;
             FillRoles(NewRoles, new List<string>());

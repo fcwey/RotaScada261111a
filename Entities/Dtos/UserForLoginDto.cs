@@ -1,15 +1,13 @@
 ﻿using Core.Entities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Entities.Dtos
 {
+    // Giriş isteği. Email alanı kullanıcı adını taşır (alan adı eski sürümle uyum için değişmedi).
     public class UserForLoginDto : IDto
     {
-        public string Email { get; set; }
-        public string Password { get; set; }
+        public string Email { get; set; } = string.Empty;
+
+        // Şifre boş bırakılabilir; şifresiz hesaplar için.
+        public string? Password { get; set; }
     }
 }

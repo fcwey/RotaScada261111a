@@ -35,7 +35,7 @@ namespace Tests
             }
         }
 
-        // Ölçüm listesinin birimleriyle birlikte geldiğini doğrular.
+        // Ölçüm listesinin birimleriyle birlikte geldiğini ve adım numarasını da içerdiğini doğrular.
         [Fact]
         public void Etiketler_BirimleriyleGelir()
         {
@@ -43,7 +43,8 @@ namespace Tests
 
             Assert.Contains(tags, t => t.Tag == "TempPota" && t.Unit == "°C");
             Assert.Contains(tags, t => t.Tag == "Pressure" && t.Unit == "mbar");
-            Assert.Equal(16, tags.Count);
+            Assert.Contains(tags, t => t.Tag == "ActiveStep");
+            Assert.Equal(17, tags.Count);
         }
 
         // Nokta sayısı yeterliyken her kaydın ayrı nokta olarak ve değeri değişmeden geldiğini doğrular.

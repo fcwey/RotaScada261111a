@@ -15,10 +15,10 @@
             <TextBlock Text="RotaScada" FontSize="26" FontWeight="Bold" />
             <TextBlock Text="{Binding ServerUrl}" Style="{StaticResource LabelText}" Margin="0,2,0,22" />
 
-            <TextBlock Text="E-posta" Style="{StaticResource LabelText}" Margin="0,0,0,5" />
-            <TextBox x:Name="EmailBox" Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Text="Kullanıcı adı" Style="{StaticResource LabelText}" Margin="0,0,0,5" />
+            <TextBox x:Name="UserNameBox" Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
 
-            <TextBlock Text="Şifre" Style="{StaticResource LabelText}" Margin="0,14,0,5" />
+            <TextBlock Text="Şifre (yoksa boş bırakın)" Style="{StaticResource LabelText}" Margin="0,14,0,5" />
             <PasswordBox x:Name="PasswordBox" KeyDown="PasswordBox_KeyDown" />
 
             <CheckBox Content="Bu bilgisayarda oturumu açık tut" IsChecked="{Binding RememberMe}" Margin="0,16,0,0" />

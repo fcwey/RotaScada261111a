@@ -49,10 +49,10 @@ namespace DesktopUI.Services
             _token = token;
         }
 
-        // E-posta ve şifreyle giriş yapıp token döner.
-        public Task<ApiResult<LoginResponse>> LoginAsync(string email, string password)
+        // Kullanıcı adı ve şifreyle giriş yapıp token döner (sunucuda kullanıcı adı Email alanında taşınır).
+        public Task<ApiResult<LoginResponse>> LoginAsync(string userName, string password)
         {
-            return SendAsync<LoginResponse>(HttpMethod.Post, "api/auth/login", new UserForLoginDto { Email = email, Password = password });
+            return SendAsync<LoginResponse>(HttpMethod.Post, "api/auth/login", new UserForLoginDto { Email = userName, Password = password });
         }
 
         // Token'ın sahibi kullanıcıyı ve güncel rollerini döner.
@@ -89,6 +89,40 @@ namespace DesktopUI.Services
         public Task<ApiResult<JsonElement>> SendCommandAsync(int code, int param1 = 0, int param2 = 0, int param3 = 0)
         {
             return PostAsync<JsonElement>($"api/plc/command?code={code}&param1={param1}&param2={param2}&param3={param3}");
+        }
+
+        // Düz metin dosyası döndüren bir uçtan (rapor gibi) metni alır; hata cevabındaki mesajı başarısız sonuç olarak döner.
+        public async Task<ApiResult<string>> GetTextAsync(string path)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, path);
+
+                if (!string.IsNullOrEmpty(_token))
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _token);
+
+                using var response = await _http.SendAsync(request);
+                string text = await response.Content.ReadAsStringAsync();
+
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    Unauthorized?.Invoke();
+                    return Fail<string>("Oturum geçersiz. Yeniden giriş yapın.");
+                }
+
+                if (response.IsSuccessStatusCode)
+                    return new ApiResult<string> { IsSuccess = true, Data = text };
+
+                return Fail<string>(ReadMessage(text, response.StatusCode));
+            }
+            catch (HttpRequestException ex)
+            {
+                return Fail<string>($"Sunucuya ulaşılamıyor: {ex.Message}");
+            }
+            catch (TaskCanceledException)
+            {
+                return Fail<string>("Sunucu zamanında cevap vermedi.");
+            }
         }
 
         // İsteği gönderir, cevabı sonuç zarfına çevirir; ağ hatası ve yetki hatası da başarısız sonuç olarak döner.

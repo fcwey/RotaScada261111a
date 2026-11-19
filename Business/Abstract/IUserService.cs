@@ -13,6 +13,8 @@ namespace Business.Abstract
     {
         List<OperationClaim> GetClaims(User user);
         void Add(User user);
+
+        // Kullanıcı adına göre tek kullanıcı döner (ad, Email alanında saklanır)
         User GetByMail(string email);
 
         // Kullanıcı yönetimi
@@ -21,7 +23,9 @@ namespace Business.Abstract
         IDataResult<int> CreateUser(UserCreateDto dto);
         IResult SetRoles(int userId, List<string> roles);
         IResult SetActive(int userId, bool isActive);
-        IResult ResetPassword(int userId, string newPassword);
+
+        // Şifreyi değiştirir; boş ya da null verilirse hesap şifresiz olur
+        IResult ResetPassword(int userId, string? newPassword);
 
         // Kullanıcının güncel durumunu ve rollerini döner; veritabanına ulaşılamazsa null döner
         UserAccessDto? GetCurrentAccess(int userId);

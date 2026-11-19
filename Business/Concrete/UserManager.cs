@@ -20,7 +20,7 @@ namespace Business.Concrete
     public class UserManager : IUserService
     {
         private const int AccessCacheSeconds = 30;   // Güncel rol bilgisinin önbellekte tutulma süresi
-        private const int MinPasswordLength = 6;
+        private const int MinUserNameLength = 2;     // Kullanıcı adının en kısa uzunluğu; şifre için sınır yoktur, boş da olabilir
 
         // Her istekte veritabanına gitmemek için kullanıcı durumu ve rolleri kısa süre önbellekte tutulur.
         private static readonly ConcurrentDictionary<int, (DateTime ReadAt, UserAccessDto Access)> AccessCache = new();
@@ -39,7 +39,7 @@ namespace Business.Concrete
             _userDal.Add(user);
         }
 
-        // E-posta adresine göre tek kullanıcı döner.
+        // Kullanıcı adına göre tek kullanıcı döner (ad, Email alanında saklanır).
         public User GetByMail(string email)
         {
             return _userDal.Get(u => u.Email == email);
@@ -84,31 +84,28 @@ namespace Business.Concrete
             return new SuccessDataResult<List<string>>(names);
         }
 
-        // Yeni kullanıcı açar ve verilen rolleri atar; oluşan kullanıcının id'sini döner.
+        // Yeni kullanıcı açar ve verilen rolleri atar; oluşan kullanıcının id'sini döner. Şifre boş olabilir.
         public IDataResult<int> CreateUser(UserCreateDto dto)
         {
-            string email = (dto.Email ?? string.Empty).Trim();
+            string userName = (dto.Email ?? string.Empty).Trim();
 
-            if (string.IsNullOrWhiteSpace(email))
-                return new ErrorDataResult<int>("E-posta boş olamaz.");
-
-            if (string.IsNullOrEmpty(dto.Password) || dto.Password.Length < MinPasswordLength)
-                return new ErrorDataResult<int>($"Şifre en az {MinPasswordLength} karakter olmalıdır.");
+            if (userName.Length < MinUserNameLength)
+                return new ErrorDataResult<int>($"Kullanıcı adı en az {MinUserNameLength} karakter olmalıdır.");
 
             using var context = new NorthwindContext();
 
-            if (context.Users.Any(u => u.Email == email))
-                return new ErrorDataResult<int>("Bu e-posta ile kayıtlı bir kullanıcı zaten var.");
+            if (context.Users.Any(u => u.Email == userName))
+                return new ErrorDataResult<int>("Bu kullanıcı adıyla kayıtlı bir kullanıcı zaten var.");
 
             var claims = ResolveRoles(context, dto.Roles, out string? roleError);
             if (claims == null)
                 return new ErrorDataResult<int>(roleError ?? "Rol listesi geçersiz.");
 
-            HashingHelper.CreatePasswordHash(dto.Password, out byte[] passwordHash, out byte[] passwordSalt);
+            HashingHelper.CreatePasswordHash(dto.Password ?? string.Empty, out byte[] passwordHash, out byte[] passwordSalt);
 
             var user = new User
             {
-                Email = email,
+                Email = userName,
                 FirstName = (dto.FirstName ?? string.Empty).Trim(),
                 LastName = (dto.LastName ?? string.Empty).Trim(),
                 PasswordHash = passwordHash,
@@ -124,7 +121,7 @@ namespace Business.Concrete
             }
             context.SaveChanges();
 
-            return new SuccessDataResult<int>(user.Id, $"'{email}' kullanıcısı oluşturuldu.");
+            return new SuccessDataResult<int>(user.Id, $"'{userName}' kullanıcısı oluşturuldu.");
         }
 
         // Kullanıcının rollerini verilen listeyle değiştirir (eski roller silinir).
@@ -179,19 +176,16 @@ namespace Business.Concrete
             return new SuccessResult($"'{user.Email}' kullanıcısı {(isActive ? "açıldı" : "kapatıldı")}.");
         }
 
-        // Kullanıcının şifresini yenisiyle değiştirir.
-        public IResult ResetPassword(int userId, string newPassword)
+        // Kullanıcının şifresini yenisiyle değiştirir; boş ya da null verilirse hesap şifresiz olur.
+        public IResult ResetPassword(int userId, string? newPassword)
         {
-            if (string.IsNullOrEmpty(newPassword) || newPassword.Length < MinPasswordLength)
-                return new ErrorResult($"Şifre en az {MinPasswordLength} karakter olmalıdır.");
-
             using var context = new NorthwindContext();
 
             var user = context.Users.FirstOrDefault(u => u.Id == userId);
             if (user == null)
                 return new ErrorResult("Kullanıcı bulunamadı.");
 
-            HashingHelper.CreatePasswordHash(newPassword, out byte[] passwordHash, out byte[] passwordSalt);
+            HashingHelper.CreatePasswordHash(newPassword ?? string.Empty, out byte[] passwordHash, out byte[] passwordSalt);
             user.PasswordHash = passwordHash;
             user.PasswordSalt = passwordSalt;
             context.SaveChanges();

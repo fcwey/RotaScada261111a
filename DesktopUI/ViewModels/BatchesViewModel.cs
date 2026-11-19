@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Core.Constants;
 using DesktopUI.Controls;
 using DesktopUI.Services;
+using DesktopUI.Views;
 using Entities.Concrete;
 using Entities.Dtos;
 using System.Collections.ObjectModel;
@@ -48,7 +49,7 @@ namespace DesktopUI.ViewModels
         public string Text { get; set; } = string.Empty;
     }
 
-    // Şarjlar sayfası: geçmiş şarjların listesi ve seçilen şarjın özeti, grafiği, adım özetleri, notları, olayları ve alarmları
+    // Şarjlar sayfası: geçmiş şarjların listesi ve seçilen şarjın özeti, grafiği, adım özetleri, notları, olayları, alarmları ve raporu
     public class BatchesViewModel : ObservableObject
     {
         private const float MaxLoadKg = 100000f;
@@ -82,6 +83,7 @@ namespace DesktopUI.ViewModels
         public IAsyncRelayCommand RefreshCommand { get; }
         public IAsyncRelayCommand SaveLoadCommand { get; }
         public IAsyncRelayCommand AddNoteCommand { get; }
+        public IAsyncRelayCommand ReportCommand { get; }
 
         // Ekranın adla okuduğu özet metinleri; olmayan ad boş döner.
         public string this[string key] => _values.TryGetValue(key, out var value) ? value : string.Empty;
@@ -153,6 +155,7 @@ namespace DesktopUI.ViewModels
             RefreshCommand = new AsyncRelayCommand(RefreshAsync);
             SaveLoadCommand = new AsyncRelayCommand(SaveLoadAsync, () => _canOperate && HasDetail);
             AddNoteCommand = new AsyncRelayCommand(AddNoteAsync, () => _canOperate && HasDetail && !string.IsNullOrWhiteSpace(NewNote));
+            ReportCommand = new AsyncRelayCommand(ShowReportAsync, () => HasDetail);
 
             Set("Empty", "Soldaki listeden bir şarj seçin.");
             _ = LoadListAsync();
@@ -432,6 +435,24 @@ namespace DesktopUI.ViewModels
                 ShowInfo(info);
         }
 
+        // Seçili şarjın raporunu sunucudan alır ve rapor penceresinde gösterir.
+        private async Task ShowReportAsync()
+        {
+            var row = _selectedBatch;
+            if (row == null)
+                return;
+
+            var result = await _api.GetTextAsync($"api/reports/batch-pdf/{row.Id}");
+            if (!result.IsSuccess || string.IsNullOrEmpty(result.Data))
+            {
+                InfoMessage = result.Message ?? "Rapor alınamadı.";
+                return;
+            }
+
+            var dialog = new ReportDialog(row.Code, result.Data) { Owner = Application.Current.MainWindow };
+            dialog.ShowDialog();
+        }
+
         // Şarjın saat zamanına göre sıcaklık grafiğini üretir: set kesikli, ölçülen dolu çizgi. Veri yoksa null döner.
         private static ProfileChartData? BuildChart(TrendDataDto? trend)
         {
@@ -533,6 +554,7 @@ namespace DesktopUI.ViewModels
         {
             SaveLoadCommand.NotifyCanExecuteChanged();
             AddNoteCommand.NotifyCanExecuteChanged();
+            ReportCommand.NotifyCanExecuteChanged();
         }
 
         // Adla okunan bir değeri günceller.

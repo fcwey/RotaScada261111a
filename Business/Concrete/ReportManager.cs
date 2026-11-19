@@ -18,7 +18,7 @@ namespace Business.Concrete
         private const string Line = "========================================================================================";
         private const string Thin = "----------------------------------------------------------------------------------------";
 
-        // Şarjın özetini, toplamlarını, adım özetlerini, müdahalelerini ve alarmlarını içeren metin raporunu üretir.
+        // Şarjın özetini, ağırlığını, toplamlarını, adım özetlerini, müdahalelerini, alarmlarını ve notlarını içeren metin raporunu üretir.
         public async Task<IDataResult<byte[]>> GenerateBatchPdfReportAsync(int batchId)
         {
             try
@@ -41,6 +41,12 @@ namespace Business.Concrete
                     .OrderBy(s => s.StepNo)
                     .ToListAsync();
 
+                var notes = await context.BatchNotes
+                    .AsNoTracking()
+                    .Where(n => n.BatchId == batchId)
+                    .OrderBy(n => n.Timestamp)
+                    .ToListAsync();
+
                 DateTime periodEnd = batch.EndTime ?? DateTime.Now;
                 var alarms = await context.Alarms
                     .AsNoTracking()
@@ -48,7 +54,12 @@ namespace Business.Concrete
                     .OrderBy(a => a.TriggeredAt)
                     .ToListAsync();
 
-                var userIds = revisions.Select(r => r.UserId).Append(batch.OperatorUserId).Distinct().ToList();
+                var userIds = revisions.Select(r => r.UserId)
+                    .Concat(notes.Select(n => n.UserId))
+                    .Append(batch.OperatorUserId)
+                    .Distinct()
+                    .ToList();
+
                 var users = await context.Users
                     .AsNoTracking()
                     .Where(u => userIds.Contains(u.Id))
@@ -69,6 +80,7 @@ namespace Business.Concrete
                 sb.AppendLine(Line);
                 sb.AppendLine($"Şarj kodu        : {batch.BatchCode}  (şarj no {batch.Id})");
                 sb.AppendLine($"Reçete           : {recipeName}  ({DescribeRecipeType(startRecipe?.RecipeType)})");
+                sb.AppendLine($"Şarj ağırlığı    : {FormatLoad(batch.LoadKg)}");
                 sb.AppendLine($"Operatör         : {LookupUser(users, batch.OperatorUserId)}");
                 sb.AppendLine($"Başlangıç        : {batch.StartTime:dd.MM.yyyy HH:mm:ss}");
                 sb.AppendLine($"Program bitişi   : {FormatTime(batch.ProgramEndTime)}");
@@ -81,6 +93,10 @@ namespace Business.Concrete
                 sb.AppendLine("ŞARJ TOPLAMLARI");
                 sb.AppendLine(Thin);
                 sb.AppendLine($"Enerji                    : {F(batch.EnergyKwh)} kWh");
+
+                if (batch.LoadKg.HasValue && batch.LoadKg.Value > 0 && batch.EnergyKwh > 0)
+                    sb.AppendLine($"Kilogram başına enerji    : {(batch.EnergyKwh / batch.LoadKg.Value).ToString("0.000", CultureInfo.InvariantCulture)} kWh/kg");
+
                 sb.AppendLine($"Azot (MFC)                : {F(batch.N2TotalL)} L");
                 sb.AppendLine($"Amonyak                   : {F(batch.NH3TotalL)} L");
                 sb.AppendLine($"CO2 (hesap)               : {F(batch.CO2TotalL)} L");
@@ -93,6 +109,7 @@ namespace Business.Concrete
                 AppendSteps(sb, steps);
                 AppendPlanEvents(sb, revisions, users);
                 AppendAlarms(sb, alarms);
+                AppendNotes(sb, notes, users);
 
                 sb.AppendLine(Line);
                 sb.AppendLine($"Rapor tarihi: {DateTime.Now:dd.MM.yyyy HH:mm:ss}");
@@ -218,10 +235,41 @@ namespace Business.Concrete
             sb.AppendLine();
         }
 
-        // Kullanıcı numarasını e-postaya çevirir; bulunamazsa numarayı yazar.
+        // Şarja iliştirilen notları (başlangıç notu, ara notlar, sonuçlar) eskiden yeniye rapora ekler.
+        private static void AppendNotes(StringBuilder sb, List<BatchNote> notes, Dictionary<int, string> users)
+        {
+            sb.AppendLine("NOTLAR");
+            sb.AppendLine(Thin);
+
+            if (notes.Count == 0)
+            {
+                sb.AppendLine("Not eklenmemiş.");
+                sb.AppendLine();
+                return;
+            }
+
+            foreach (var note in notes)
+            {
+                sb.AppendLine($"{note.Timestamp:dd.MM.yyyy HH:mm}  ({LookupUser(users, note.UserId)})");
+
+                // Çok satırlı notun her satırı girintili yazılır.
+                foreach (string line in note.NoteText.Replace("\r", string.Empty).Split('\n'))
+                    sb.AppendLine($"    {line}");
+
+                sb.AppendLine();
+            }
+        }
+
+        // Kullanıcı numarasını kullanıcı adına çevirir; bulunamazsa numarayı yazar.
         private static string LookupUser(Dictionary<int, string> users, int userId)
         {
-            return users.TryGetValue(userId, out var email) ? email : $"kullanıcı {userId}";
+            return users.TryGetValue(userId, out var name) ? name : $"kullanıcı {userId}";
+        }
+
+        // Şarj ağırlığını yazar; girilmemişse bunu belirtir.
+        private static string FormatLoad(float? loadKg)
+        {
+            return loadKg.HasValue ? $"{loadKg.Value.ToString("0.#", CultureInfo.InvariantCulture)} kg" : "girilmemiş";
         }
 
         // Zamanı rapor biçiminde yazar; boşsa çizgi koyar.

@@ -28,7 +28,7 @@
                             <StackPanel>
                                 <DockPanel>
                                     <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="{StaticResource BadBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Email}" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding UserName}" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                 </DockPanel>
                                 <TextBlock Text="{Binding FullName}" Foreground="{StaticResource SoftTextBrush}" FontSize="13" Margin="0,2,0,0" />
                                 <TextBlock Text="{Binding RolesText}" Foreground="{StaticResource MutedBrush}" FontSize="12" TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
@@ -102,7 +102,7 @@
                         <Button Content="{Binding ToggleActiveText}" Command="{Binding ToggleActiveCommand}" Height="36" Padding="18,0" Margin="10,0,0,0" />
                     </StackPanel>
 
-                    <TextBlock Text="Yeni şifre (en az 6 karakter)" Style="{StaticResource FormLabel}" Margin="0,16,0,3" />
+                    <TextBlock Text="Yeni şifre (boş bırakılırsa hesap şifresiz olur)" Style="{StaticResource FormLabel}" Margin="0,16,0,3" />
                     <StackPanel Orientation="Horizontal">
                         <PasswordBox x:Name="ResetPasswordBox" Width="240" />
                         <Button Content="Şifreyi Değiştir" Click="OnResetPasswordClick" Height="36" Padding="18,0" Margin="10,0,0,0" />
@@ -125,19 +125,19 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,6,0">
                     <TextBlock Text="YENİ KULLANICI" Style="{StaticResource PanelTitle}" />
-                    <TextBlock Text="E-posta (giriş adı)" Style="{StaticResource FormLabel}" />
-                    <TextBox Text="{Binding NewEmail, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="Kullanıcı adı (en az 2 karakter)" Style="{StaticResource FormLabel}" />
+                    <TextBox Text="{Binding NewUserName, UpdateSourceTrigger=PropertyChanged}" />
                     <UniformGrid Columns="2">
                         <StackPanel Margin="0,0,5,0">
-                            <TextBlock Text="Ad" Style="{StaticResource FormLabel}" />
+                            <TextBlock Text="Ad (isteğe bağlı)" Style="{StaticResource FormLabel}" />
                             <TextBox Text="{Binding NewFirstName, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
                         <StackPanel Margin="5,0,0,0">
-                            <TextBlock Text="Soyad" Style="{StaticResource FormLabel}" />
+                            <TextBlock Text="Soyad (isteğe bağlı)" Style="{StaticResource FormLabel}" />
                             <TextBox Text="{Binding NewLastName, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
                     </UniformGrid>
-                    <TextBlock Text="Şifre (en az 6 karakter)" Style="{StaticResource FormLabel}" />
+                    <TextBlock Text="Şifre (boş bırakılabilir)" Style="{StaticResource FormLabel}" />
                     <PasswordBox x:Name="NewPasswordBox" />
                     <TextBlock Text="Roller" Style="{StaticResource FormLabel}" Margin="0,14,0,6" />
                 </StackPanel>

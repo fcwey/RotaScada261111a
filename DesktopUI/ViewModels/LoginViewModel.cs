@@ -6,10 +6,12 @@ namespace DesktopUI.ViewModels
     // Giriş ekranının verisi ve giriş işlemi
     public class LoginViewModel : ObservableObject
     {
+        private const int MinUserNameLength = 2;
+
         private readonly ApiClient _api;
         private readonly SessionService _session;
 
-        private string _email = string.Empty;
+        private string _userName = string.Empty;
         private string _errorMessage = string.Empty;
         private bool _isBusy;
         private bool _rememberMe = true;
@@ -19,10 +21,10 @@ namespace DesktopUI.ViewModels
 
         public string ServerUrl { get; }
 
-        public string Email
+        public string UserName
         {
-            get => _email;
-            set => SetProperty(ref _email, value);
+            get => _userName;
+            set => SetProperty(ref _userName, value);
         }
 
         public string ErrorMessage
@@ -58,15 +60,17 @@ namespace DesktopUI.ViewModels
             _errorMessage = initialMessage ?? string.Empty;
         }
 
-        // Giriş yapar, kullanıcı bilgisini alır ve oturumu başlatır.
+        // Kullanıcı adı ve şifreyle (şifre boş olabilir) giriş yapar, kullanıcı bilgisini alır ve oturumu başlatır.
         public async Task LoginAsync(string password)
         {
             if (IsBusy)
                 return;
 
-            if (string.IsNullOrWhiteSpace(Email) || string.IsNullOrEmpty(password))
+            string userName = (UserName ?? string.Empty).Trim();
+
+            if (userName.Length < MinUserNameLength)
             {
-                ErrorMessage = "E-posta ve şifre girin.";
+                ErrorMessage = "Kullanıcı adını girin.";
                 return;
             }
 
@@ -75,7 +79,7 @@ namespace DesktopUI.ViewModels
 
             try
             {
-                var login = await _api.LoginAsync(Email.Trim(), password);
+                var login = await _api.LoginAsync(userName, password ?? string.Empty);
                 if (!login.IsSuccess || login.Data == null || string.IsNullOrEmpty(login.Data.Token))
                 {
                     ErrorMessage = login.Message ?? "Giriş yapılamadı.";

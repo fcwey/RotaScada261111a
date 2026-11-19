@@ -24,12 +24,12 @@ namespace Tests
             return new UserManager(new EfUserDal());
         }
 
-        // Verilen e-posta ve rollerle kullanıcı açma isteği üretir.
-        private static UserCreateDto NewUser(string email, params string[] roles)
+        // Verilen kullanıcı adı ve rollerle kullanıcı açma isteği üretir.
+        private static UserCreateDto NewUser(string userName, params string[] roles)
         {
             return new UserCreateDto
             {
-                Email = email,
+                Email = userName,
                 FirstName = "Test",
                 LastName = "Kullanıcı",
                 Password = "sifre123",
@@ -43,12 +43,12 @@ namespace Tests
         {
             var manager = CreateManager();
 
-            var result = manager.CreateUser(NewUser("operator@test", PlcPermissions.Operate, PlcPermissions.Manual));
+            var result = manager.CreateUser(NewUser("operator", PlcPermissions.Operate, PlcPermissions.Manual));
             var users = manager.GetUsers().Data;
 
             Assert.True(result.IsSuccess);
             Assert.Single(users);
-            Assert.Equal("operator@test", users[0].Email);
+            Assert.Equal("operator", users[0].Email);
             Assert.True(users[0].IsActive);
             Assert.Equal(new[] { PlcPermissions.Manual, PlcPermissions.Operate }, users[0].Roles.ToArray());
         }
@@ -58,7 +58,7 @@ namespace Tests
         public void Create_SifreHashlenir()
         {
             var manager = CreateManager();
-            manager.CreateUser(NewUser("operator@test"));
+            manager.CreateUser(NewUser("operator"));
 
             using var context = new NorthwindContext();
             var user = context.Users.Single();
@@ -67,14 +67,14 @@ namespace Tests
             Assert.False(HashingHelper.VerifyPasswordHash("yanlis", user.PasswordHash, user.PasswordSalt));
         }
 
-        // Aynı e-posta ile ikinci kullanıcı açılamadığını doğrular.
+        // Aynı kullanıcı adıyla ikinci kullanıcı açılamadığını doğrular.
         [Fact]
-        public void Create_AyniEpostaReddedilir()
+        public void Create_AyniKullaniciAdiReddedilir()
         {
             var manager = CreateManager();
-            manager.CreateUser(NewUser("operator@test"));
+            manager.CreateUser(NewUser("operator"));
 
-            var second = manager.CreateUser(NewUser("operator@test"));
+            var second = manager.CreateUser(NewUser("operator"));
 
             Assert.False(second.IsSuccess);
             Assert.Single(manager.GetUsers().Data);
@@ -86,21 +86,38 @@ namespace Tests
         {
             var manager = CreateManager();
 
-            var result = manager.CreateUser(NewUser("operator@test", "Olmayan.Rol"));
+            var result = manager.CreateUser(NewUser("operator", "Olmayan.Rol"));
 
             Assert.False(result.IsSuccess);
             Assert.Empty(manager.GetUsers().Data);
         }
 
-        // Kısa şifrenin reddedildiğini doğrular.
+        // İki karakterden kısa kullanıcı adının reddedildiğini, iki karakterin kabul edildiğini doğrular.
         [Fact]
-        public void Create_KisaSifreReddedilir()
+        public void Create_KullaniciAdiEnAzIkiKarakter()
         {
             var manager = CreateManager();
-            var dto = NewUser("operator@test");
-            dto.Password = "123";
 
-            Assert.False(manager.CreateUser(dto).IsSuccess);
+            Assert.False(manager.CreateUser(NewUser("a")).IsSuccess);
+            Assert.False(manager.CreateUser(NewUser("  ")).IsSuccess);
+            Assert.True(manager.CreateUser(NewUser("ab")).IsSuccess);
+        }
+
+        // Şifresi boş bırakılan kullanıcının açıldığını ve yalnızca boş şifreyle doğrulandığını doğrular.
+        [Fact]
+        public void Create_BosSifreKabulEdilir()
+        {
+            var manager = CreateManager();
+            var dto = NewUser("operator");
+            dto.Password = null;
+
+            var result = manager.CreateUser(dto);
+
+            using var context = new NorthwindContext();
+            var user = context.Users.Single();
+            Assert.True(result.IsSuccess);
+            Assert.True(HashingHelper.VerifyPasswordHash(string.Empty, user.PasswordHash, user.PasswordSalt));
+            Assert.False(HashingHelper.VerifyPasswordHash("123", user.PasswordHash, user.PasswordSalt));
         }
 
         // Rol değişikliğinin beklemeden (önbelleğe takılmadan) geçerli olduğunu doğrular.
@@ -108,7 +125,7 @@ namespace Tests
         public void SetRoles_HemenGecerliOlur()
         {
             var manager = CreateManager();
-            int id = manager.CreateUser(NewUser("operator@test", PlcPermissions.Operate)).Data;
+            int id = manager.CreateUser(NewUser("operator", PlcPermissions.Operate)).Data;
             var before = manager.GetCurrentAccess(id);
 
             var result = manager.SetRoles(id, new List<string> { PlcPermissions.Manual });
@@ -124,7 +141,7 @@ namespace Tests
         public void SetActive_KapatilanHesapHemenPasif()
         {
             var manager = CreateManager();
-            int id = manager.CreateUser(NewUser("operator@test", PlcPermissions.Operate)).Data;
+            int id = manager.CreateUser(NewUser("operator", PlcPermissions.Operate)).Data;
             Assert.True(manager.GetCurrentAccess(id)!.IsActive);
 
             var result = manager.SetActive(id, false);
@@ -138,7 +155,7 @@ namespace Tests
         public void SonYonetici_RoluAlinamaz()
         {
             var manager = CreateManager();
-            int id = manager.CreateUser(NewUser("admin@test", PlcPermissions.Admin)).Data;
+            int id = manager.CreateUser(NewUser("admin", PlcPermissions.Admin)).Data;
 
             var result = manager.SetRoles(id, new List<string> { PlcPermissions.Operate });
 
@@ -151,7 +168,7 @@ namespace Tests
         public void SonYonetici_Kapatilamaz()
         {
             var manager = CreateManager();
-            int id = manager.CreateUser(NewUser("admin@test", PlcPermissions.Admin)).Data;
+            int id = manager.CreateUser(NewUser("admin", PlcPermissions.Admin)).Data;
 
             var result = manager.SetActive(id, false);
 
@@ -164,8 +181,8 @@ namespace Tests
         public void IkinciYoneticiVarken_RolAlinabilir()
         {
             var manager = CreateManager();
-            int first = manager.CreateUser(NewUser("admin1@test", PlcPermissions.Admin)).Data;
-            manager.CreateUser(NewUser("admin2@test", PlcPermissions.Admin));
+            int first = manager.CreateUser(NewUser("admin1", PlcPermissions.Admin)).Data;
+            manager.CreateUser(NewUser("admin2", PlcPermissions.Admin));
 
             var result = manager.SetRoles(first, new List<string>());
 
@@ -178,8 +195,8 @@ namespace Tests
         public void KapaliYonetici_SayimaGirmez()
         {
             var manager = CreateManager();
-            int first = manager.CreateUser(NewUser("admin1@test", PlcPermissions.Admin)).Data;
-            int second = manager.CreateUser(NewUser("admin2@test", PlcPermissions.Admin)).Data;
+            int first = manager.CreateUser(NewUser("admin1", PlcPermissions.Admin)).Data;
+            int second = manager.CreateUser(NewUser("admin2", PlcPermissions.Admin)).Data;
             manager.SetActive(second, false);
 
             var result = manager.SetActive(first, false);
@@ -187,12 +204,12 @@ namespace Tests
             Assert.False(result.IsSuccess);   // Geriye aktif yönetici kalmayacaktı
         }
 
-        // Şifre sıfırlamadan sonra yeni şifrenin geçerli, eskisinin geçersiz olduğunu doğrular.
+        // Şifre değiştirmeden sonra yeni şifrenin geçerli, eskisinin geçersiz olduğunu doğrular.
         [Fact]
         public void ResetPassword_YeniSifreGecerli()
         {
             var manager = CreateManager();
-            int id = manager.CreateUser(NewUser("operator@test")).Data;
+            int id = manager.CreateUser(NewUser("operator")).Data;
 
             var result = manager.ResetPassword(id, "yeniSifre456");
 
@@ -200,6 +217,22 @@ namespace Tests
             var user = context.Users.Single();
             Assert.True(result.IsSuccess);
             Assert.True(HashingHelper.VerifyPasswordHash("yeniSifre456", user.PasswordHash, user.PasswordSalt));
+            Assert.False(HashingHelper.VerifyPasswordHash("sifre123", user.PasswordHash, user.PasswordSalt));
+        }
+
+        // Şifre boşaltıldığında hesabın şifresiz olduğunu, eski şifrenin artık geçmediğini doğrular.
+        [Fact]
+        public void ResetPassword_BosSifreyleSifresizOlur()
+        {
+            var manager = CreateManager();
+            int id = manager.CreateUser(NewUser("operator")).Data;
+
+            var result = manager.ResetPassword(id, string.Empty);
+
+            using var context = new NorthwindContext();
+            var user = context.Users.Single();
+            Assert.True(result.IsSuccess);
+            Assert.True(HashingHelper.VerifyPasswordHash(string.Empty, user.PasswordHash, user.PasswordSalt));
             Assert.False(HashingHelper.VerifyPasswordHash("sifre123", user.PasswordHash, user.PasswordSalt));
         }
 

@@ -8,13 +8,13 @@ namespace DesktopUI.Views
     {
         private readonly LoginViewModel _viewModel;
 
-        // Görünüm modelini bağlar ve imleci e-posta kutusuna koyar.
+        // Görünüm modelini bağlar ve imleci kullanıcı adı kutusuna koyar.
         public LoginWindow(LoginViewModel viewModel)
         {
             InitializeComponent();
             _viewModel = viewModel;
             DataContext = viewModel;
-            Loaded += (_, _) => EmailBox.Focus();
+            Loaded += (_, _) => UserNameBox.Focus();
         }
 
         // Giriş düğmesine basılınca şifreyi kutudan alıp giriş yapar.

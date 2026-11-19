@@ -16,7 +16,7 @@ namespace Business.Concrete
     public class AuthManager : IAuthService
     {
         // Hangi hesapların var olduğu anlaşılmasın diye iki hata için aynı mesaj kullanılır.
-        public const string InvalidLoginMessage = "E-posta ya da şifre hatalı.";
+        public const string InvalidLoginMessage = "Kullanıcı adı ya da şifre hatalı.";
 
         IUserService _userService;
         ITokenHelper _tokenHelper;
@@ -36,15 +36,23 @@ namespace Business.Concrete
             return new SuccessDataResult<AccessToken>(accessToken, Messages.AccessTokenCreated);
         }
 
-        // E-posta ve şifreyi doğrular; hesap kapalıysa girişe izin vermez, eski biçimli şifreyi yeniler.
+        // Kullanıcı adını ve şifreyi doğrular (şifre boş olabilir); hesap kapalıysa girişe izin vermez, eski biçimli şifreyi yeniler.
         public IDataResult<User> Login(UserForLoginDto userForLoginDto)
         {
-            var userToCheck = _userService.GetByMail(userForLoginDto.Email);
+            string userName = (userForLoginDto.Email ?? string.Empty).Trim();
+            string password = userForLoginDto.Password ?? string.Empty;
+
+            if (userName.Length == 0)
+            {
+                return new ErrorDataResult<User>(InvalidLoginMessage);
+            }
+
+            var userToCheck = _userService.GetByMail(userName);
             if (userToCheck == null)
             {
                 return new ErrorDataResult<User>(InvalidLoginMessage);
             }
-            if (!HashingHelper.VerifyPasswordHash(userForLoginDto.Password, userToCheck.PasswordHash, userToCheck.PasswordSalt))
+            if (!HashingHelper.VerifyPasswordHash(password, userToCheck.PasswordHash, userToCheck.PasswordSalt))
             {
                 return new ErrorDataResult<User>(InvalidLoginMessage);
             }
@@ -53,7 +61,7 @@ namespace Business.Concrete
                 return new ErrorDataResult<User>("Bu kullanıcı hesabı kapatılmış.");
             }
 
-            UpgradePasswordHashIfNeeded(userToCheck, userForLoginDto.Password);
+            UpgradePasswordHashIfNeeded(userToCheck, password);
 
             return new SuccessDataResult<User>(userToCheck, Messages.SuccessfulLogin);
         }
@@ -78,7 +86,7 @@ namespace Business.Concrete
         public IDataResult<User> Register(UserForRegisterDto userForRegisterDto, string password)
         {
             byte[] passwordHash, passwordSalt;
-            HashingHelper.CreatePasswordHash(password, out passwordHash, out passwordSalt);
+            HashingHelper.CreatePasswordHash(password ?? string.Empty, out passwordHash, out passwordSalt);
             var user = new User
             {
                 Email = userForRegisterDto.Email,
@@ -92,7 +100,7 @@ namespace Business.Concrete
             return new SuccessDataResult<User>(user, Messages.UserRegistered);
         }
 
-        // Verilen e-posta ile kayıtlı kullanıcı varsa hata döner.
+        // Verilen kullanıcı adıyla kayıtlı kullanıcı varsa hata döner.
         public IResult UserExist(string email)
         {
             if (_userService.GetByMail(email) != null)
