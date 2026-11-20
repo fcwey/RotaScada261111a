@@ -51,14 +51,28 @@ namespace DesktopUI.ViewModels
         public string PinTip => IsPinned ? "Sabitlemeyi kaldır" : "Grubun başına sabitle";
     }
 
-    // Okuma görünümündeki bir adım satırı: adım cümle olarak yazılır, ek değerler küçük etiketlerde durur
+    // Okuma görünümündeki bir adım satırı: ne yapıldığı cümleyle, değerler birimleriyle hizalı sütunlarda yazılır
     public class StepLine
     {
+        public const string Empty = "—";
+
         public int StepNo { get; set; }
         public int StepType { get; set; }
         public string KindText { get; set; } = string.Empty;
         public string Main { get; set; } = string.Empty;
-        public List<string> Chips { get; set; } = new();
+        public string Note { get; set; } = string.Empty;        // Vakum adımında sütunların yerine yazılan açıklama
+        public string Duration { get; set; } = Empty;           // "10 dk"
+        public string N2 { get; set; } = Empty;                 // "500 L/h"
+        public string NH3 { get; set; } = Empty;                // "750 L/h"
+        public string CO2 { get; set; } = Empty;                // "%5"
+        public string Water { get; set; } = Empty;              // "açık"
+        public string H2 { get; set; } = Empty;                 // "%40,0"
+        public string Gsoak { get; set; } = Empty;              // "5 °C"
+        public string Fan { get; set; } = Empty;                // "%100"
+        public bool IsVacuum => StepType == 1;
+        public bool HasValues => StepType != 1;
+        public bool ShowNitriding { get; set; }                 // Amonyak, CO₂ ve H₂ sütunları yalnızca nitrasyonda görünür
+        public bool ShowWater { get; set; }                     // Su sütunu yalnızca oksidasyonda görünür
         public string ErrorText { get; set; } = string.Empty;
         public bool HasError => ErrorText.Length > 0;
     }
@@ -71,6 +85,7 @@ namespace DesktopUI.ViewModels
         private const float PreviewStartTemp = 20f;
         private const int SortByName = 0;
         private const int SortByTemp = 1;
+        private static readonly System.Globalization.CultureInfo Tr = new System.Globalization.CultureInfo("tr-TR");
 
         private readonly ApiClient _api;
         private readonly bool _canEdit;
@@ -163,7 +178,7 @@ namespace DesktopUI.ViewModels
         public bool IsListEnabled => !IsDirty;
         public string EditorTitle => !HasEditor ? string.Empty : _editId == 0 ? "YENİ REÇETE" : $"REÇETE NO {_editId} · DÜZENLEME";
         public string NoText => _editId == 0 ? "kaydedilmedi" : $"no {_editId}";
-        public string TypeText => RecipeTypes.FirstOrDefault(t => t.Value == RecipeType)?.Text.ToUpper(new System.Globalization.CultureInfo("tr-TR")) ?? string.Empty;
+        public string TypeText => RecipeTypes.FirstOrDefault(t => t.Value == RecipeType)?.Text.ToUpper(Tr) ?? string.Empty;
 
         // Reçete açık ve düzenleme kapalıyken salt okunur görünüm gösterilir.
         public bool IsReading => HasEditor && !IsEditing;
@@ -318,6 +333,10 @@ namespace DesktopUI.ViewModels
         public bool ShowPressureModeTime => RecipeType == 1 && PressureMode == 10;
         public bool ShowPressureModeTemp => RecipeType == 1 && PressureMode == 20;
         public bool ShowCO2Period => RecipeType == 2;
+
+        // Okuma tablosunda reçete tipine göre görünen sütunlar
+        public bool IsNitriding => RecipeType == 2;
+        public bool IsOxidation => RecipeType == 3;
 
         public string Message { get => _message; private set => SetProperty(ref _message, value); }
         public string MessageLevel { get => _messageLevel; private set => SetProperty(ref _messageLevel, value); }     // Info, Ok, Bad
@@ -793,39 +812,39 @@ namespace DesktopUI.ViewModels
             ProfileNote = "Üstteki numaralar adım numarasıdır. Vakum ve soğutmanın süresi önceden bilinmez; bölgelerinin genişliği süreyi göstermez.";
         }
 
-        // Eğrinin altındaki gaz şeritlerini üretir: her şerit bir gazı, her çubuk o gazın verildiği adımı gösterir.
+        // Eğrinin altındaki gaz şeritlerini üretir: her şerit bir gazı, her çubuk o gazın verildiği adımı birimli değeriyle gösterir.
         private GasLaneData BuildLanes(RecipeTimeline timeline)
         {
             var data = new GasLaneData { XMax = timeline.XMax };
             var errorSteps = Steps.Where(s => s.HasH2Error).Select(s => s.StepNo).ToHashSet();
 
-            AddLane(data, timeline, "Azot", "#8FB7FF", s => s.N2_Flow > 0 ? s.N2_Flow.ToString() : null, null);
-            AddLane(data, timeline, "Amonyak", "#C58BFF", s => s.NH3_Flow > 0 ? s.NH3_Flow.ToString() : null, null);
-            AddLane(data, timeline, "CO₂", "#7FD4C1", s => s.CO2_Perc > 0 ? $"%{s.CO2_Perc}" : null, null);
-            AddLane(data, timeline, "Su", "#5BC0F0", s => s.Su_On != 0 ? "açık" : null, null);
-            AddLane(data, timeline, "H₂ oto", "#FFD23B", s => s.H2_Auto != 0 ? $"%{s.H2_Set / 10.0:0.0}" : null, errorSteps);
-            AddLane(data, timeline, "Fan", "#8FA0BC", s => s.FanSpeed > 0 ? $"%{s.FanSpeed}" : null, null);
+            AddLane(data, timeline, "Azot", "#8FB7FF", s => s.N2_Flow > 0 ? ($"{s.N2_Flow} L/h", s.N2_Flow.ToString()) : null, null);
+            AddLane(data, timeline, "Amonyak", "#C58BFF", s => s.NH3_Flow > 0 ? ($"{s.NH3_Flow} L/h", s.NH3_Flow.ToString()) : null, null);
+            AddLane(data, timeline, "CO₂", "#7FD4C1", s => s.CO2_Perc > 0 ? ($"%{s.CO2_Perc}", s.CO2_Perc.ToString()) : null, null);
+            AddLane(data, timeline, "Su", "#5BC0F0", s => s.Su_On != 0 ? ("açık", "✓") : null, null);
+            AddLane(data, timeline, "H₂ oto", "#FFD23B", s => s.H2_Auto != 0 ? (FormatH2(s.H2_Set), (s.H2_Set / 10.0).ToString("0.0", Tr)) : null, errorSteps);
 
             return data;
         }
 
-        // Verilen gaz için şerit ekler; hiçbir adımda kullanılmıyorsa şerit eklenmez.
+        // Verilen gaz için şerit ekler; değer birimli ve birimsiz iki biçimde verilir. Hiçbir adımda kullanılmıyorsa şerit eklenmez.
         private static void AddLane(GasLaneData data, RecipeTimeline timeline, string name, string color,
-            Func<RecipeStep, string?> describe, HashSet<int>? errorSteps)
+            Func<RecipeStep, (string Text, string Short)?> describe, HashSet<int>? errorSteps)
         {
             var lane = new GasLane { Name = name, Color = (Color)ColorConverter.ConvertFromString(color) };
 
             foreach (var step in timeline.Steps.Where(s => s.Kind != 1))
             {
-                string? text = describe(step.Step);
-                if (text == null)
+                var value = describe(step.Step);
+                if (value == null)
                     continue;
 
                 lane.Bars.Add(new GasBar
                 {
                     X1 = step.X1,
                     X2 = step.X2,
-                    Text = text,
+                    Text = value.Value.Text,
+                    ShortText = value.Value.Short,
                     IsError = errorSteps != null && errorSteps.Contains(step.Step.StepNo)
                 });
             }
@@ -909,7 +928,7 @@ namespace DesktopUI.ViewModels
 
             var totals = new List<(string Label, string Value)>
             {
-                ("Isıtma süresi", StatusTexts.FormatMinutes(heatMinutes)),
+                ("Isıtma süresi", FormatDuration(heatMinutes)),
                 ("Azot (ısıtmada)", $"≈ {n2:0} L")
             };
 
@@ -934,7 +953,6 @@ namespace DesktopUI.ViewModels
             if (ShowPressureModeTemp)
                 meta.Add(("Geçiş sıcaklığı", $"{recipe.PressureModeTemp} °C"));
 
-            meta.Add(("Adım sayısı", recipe.Steps.Count.ToString()));
             meta.AddRange(totals);
 
             Fill(MetaItems, meta);
@@ -949,7 +967,7 @@ namespace DesktopUI.ViewModels
                 target.Add(new StatusCell(item.Label, item.Value));
         }
 
-        // Okuma görünümündeki adım satırlarını üretir: her adım bir cümle, ek değerler etiket olarak yazılır.
+        // Okuma görünümündeki adım satırlarını üretir: ne yapıldığı cümleyle, her değer birimiyle kendi sütununda yazılır.
         private void BuildReadLines(Recipe recipe)
         {
             ReadLines.Clear();
@@ -961,6 +979,8 @@ namespace DesktopUI.ViewModels
                 {
                     StepNo = step.StepNo,
                     StepType = step.StepType,
+                    ShowNitriding = recipe.RecipeType == 2,
+                    ShowWater = recipe.RecipeType == 3,
                     ErrorText = Steps.FirstOrDefault(s => s.StepNo == step.StepNo)?.ErrorText ?? string.Empty
                 };
 
@@ -969,30 +989,31 @@ namespace DesktopUI.ViewModels
                     case 1:
                         line.KindText = "VAKUM";
                         line.Main = $"{step.Vac_SetPoint} mbar mutlak basınca in";
-                        line.Chips.Add($"zaman aşımı {step.Vac_Timeout} dk");
+                        line.Note = $"zaman aşımı {step.Vac_Timeout} dk";
                         break;
 
                     case 2:
                         line.KindText = "ISITMA";
                         line.Main = Math.Abs(step.TargetTemp - temp) < 0.5
-                            ? $"{step.TargetTemp} °C sıcaklıkta {step.StepTime} dk bekle"
-                            : $"{step.StepTime} dk içinde {step.TargetTemp} °C sıcaklığa git";
+                            ? $"{step.TargetTemp} °C sıcaklıkta bekle"
+                            : $"{step.TargetTemp} °C sıcaklığa git";
 
-                        if (step.GSoak > 0) line.Chips.Add($"Gsoak {step.GSoak} °C");
-                        if (step.N2_Flow > 0) line.Chips.Add($"Azot {step.N2_Flow} L/h");
-                        if (step.NH3_Flow > 0) line.Chips.Add($"Amonyak {step.NH3_Flow} L/h");
-                        if (step.CO2_Perc > 0) line.Chips.Add($"CO₂ %{step.CO2_Perc}");
-                        if (step.Su_On != 0) line.Chips.Add("Su açık");
-                        if (step.H2_Auto != 0) line.Chips.Add($"H₂ oto %{step.H2_Set / 10.0:0.0}");
-                        line.Chips.Add($"Fan %{step.FanSpeed}");
+                        line.Duration = $"{step.StepTime} dk";
+                        if (step.N2_Flow > 0) line.N2 = $"{step.N2_Flow} L/h";
+                        if (step.NH3_Flow > 0) line.NH3 = $"{step.NH3_Flow} L/h";
+                        if (step.CO2_Perc > 0) line.CO2 = $"%{step.CO2_Perc}";
+                        if (step.Su_On != 0) line.Water = "açık";
+                        if (step.H2_Auto != 0) line.H2 = FormatH2(step.H2_Set);
+                        if (step.GSoak > 0) line.Gsoak = $"{step.GSoak} °C";
+                        line.Fan = $"%{step.FanSpeed}";
                         temp = step.TargetTemp;
                         break;
 
                     case 3:
                         line.KindText = "SOĞUTMA";
                         line.Main = $"{step.TargetTemp} °C altına soğut";
-                        if (step.N2_Flow > 0) line.Chips.Add($"Azot {step.N2_Flow} L/h");
-                        line.Chips.Add($"Fan %{step.FanSpeed}");
+                        if (step.N2_Flow > 0) line.N2 = $"{step.N2_Flow} L/h";
+                        line.Fan = $"%{step.FanSpeed}";
                         temp = step.TargetTemp;
                         break;
 
@@ -1003,6 +1024,21 @@ namespace DesktopUI.ViewModels
 
                 ReadLines.Add(line);
             }
+        }
+
+        // Hidrojen setini (onda bir yüzde) başında yüzde işaretiyle yazar: %40,0
+        private static string FormatH2(int tenths)
+        {
+            return "%" + (tenths / 10.0).ToString("0.0", Tr);
+        }
+
+        // Dakikayı birimiyle yazar: 33 dk, 2 sa 15 dk
+        private static string FormatDuration(int minutes)
+        {
+            if (minutes < 60)
+                return $"{minutes} dk";
+
+            return minutes % 60 == 0 ? $"{minutes / 60} sa" : $"{minutes / 60} sa {minutes % 60} dk";
         }
 
         // Başlık alanını günceller ve değiştiyse reçeteyi değişmiş sayar.
@@ -1030,13 +1066,15 @@ namespace DesktopUI.ViewModels
             RefreshCommands();
         }
 
-        // Başlıkta reçete tipine bağlı alanların görünürlüğünü yeniden hesaplatır.
+        // Başlıkta ve okuma tablosunda reçete tipine bağlı alanların görünürlüğünü yeniden hesaplatır.
         private void NotifyHeaderVisibility()
         {
             OnPropertyChanged(nameof(ShowPressureMode));
             OnPropertyChanged(nameof(ShowPressureModeTime));
             OnPropertyChanged(nameof(ShowPressureModeTemp));
             OnPropertyChanged(nameof(ShowCO2Period));
+            OnPropertyChanged(nameof(IsNitriding));
+            OnPropertyChanged(nameof(IsOxidation));
         }
 
         // Sayfanın altındaki sonuç mesajını ve rengini ayarlar.

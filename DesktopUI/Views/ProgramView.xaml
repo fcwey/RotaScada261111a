@@ -6,10 +6,17 @@
 
     <UserControl.Resources>
 
-        <!-- Adım tipi renkleri: yalnızca satırdaki ince şeritte ve grafiğin üst şeridinde -->
+        <!-- Reçete tipi renkleri: meneviş yeşil, nitrasyon mavi, oksidasyon gri -->
+        <SolidColorBrush x:Key="TemperingBrush" Color="#7BC96F" />
+        <SolidColorBrush x:Key="NitridingBrush" Color="#4C8DF6" />
+        <SolidColorBrush x:Key="OxidationBrush" Color="#A9B4C4" />
+
+        <!-- Adım tipi renkleri -->
         <SolidColorBrush x:Key="VacuumBrush" Color="#5B8DEF" />
         <SolidColorBrush x:Key="HeatingBrush" Color="#FF9F45" />
         <SolidColorBrush x:Key="CoolingBrush" Color="#3CC8D9" />
+
+        <!-- Adıma gitme rengi -->
         <SolidColorBrush x:Key="TargetBrush" Color="#FFB84A" />
 
         <Style x:Key="Panel" TargetType="Border">
@@ -20,11 +27,11 @@
         </Style>
         <Style x:Key="PanelTitle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
-        <!-- Adım tablosundaki sayı kutusu -->
+        <!-- Düzenleme tablosundaki sayı kutusu -->
         <Style x:Key="Cell" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="Margin" Value="3,0" />
             <Setter Property="Padding" Value="6,5" />
@@ -33,52 +40,169 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <!-- Adım tablosunun sütun başlığı -->
+        <!-- Sıfır olan değer soluk yazılır -->
+        <Style x:Key="DimCell" TargetType="TextBox" BasedOn="{StaticResource Cell}">
+            <Style.Triggers>
+                <Trigger Property="Text" Value="0">
+                    <Setter Property="Foreground" Value="#55678A" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Düzenleme tablosunun sütun başlığı -->
         <Style x:Key="Head" TargetType="TextBlock" BasedOn="{StaticResource LabelText}">
             <Setter Property="TextAlignment" Value="Center" />
-            <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="VerticalAlignment" Value="Bottom" />
         </Style>
 
-        <!-- Adım satırı: çalışan adım mavi çerçeveli, biten adım soluk -->
-        <Style x:Key="StepRow" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource CardBrush}" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1.5" />
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsActiveStep}" Value="True">
-                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding IsPast}" Value="True">
-                    <Setter Property="Opacity" Value="0.55" />
-                </DataTrigger>
-            </Style.Triggers>
+        <!-- Sütun grubu başlığı -->
+        <Style x:Key="GroupHead" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="Margin" Value="3,0,3,3" />
         </Style>
 
         <!-- Adım satırının solundaki renk şeridi -->
         <Style x:Key="StepStripe" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource IdleBrush}" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding Step.StepType}" Value="1">
+                <DataTrigger Binding="{Binding StepType}" Value="1">
                     <Setter Property="Background" Value="{StaticResource VacuumBrush}" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Step.StepType}" Value="2">
+                <DataTrigger Binding="{Binding StepType}" Value="2">
                     <Setter Property="Background" Value="{StaticResource HeatingBrush}" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding Step.StepType}" Value="3">
+                <DataTrigger Binding="{Binding StepType}" Value="3">
                     <Setter Property="Background" Value="{StaticResource CoolingBrush}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
 
-        <!-- Adımın durum yazısı: çalışan adımda mavi -->
-        <Style x:Key="StateText" TargetType="TextBlock">
+        <!-- Adım tipinin adı: şeritle aynı renkte -->
+        <Style x:Key="KindText" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
-            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="FontWeight" Value="Bold" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding IsActiveStep}" Value="True">
+                <DataTrigger Binding="{Binding StepType}" Value="1">
+                    <Setter Property="Foreground" Value="{StaticResource VacuumBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StepType}" Value="2">
+                    <Setter Property="Foreground" Value="{StaticResource HeatingBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StepType}" Value="3">
+                    <Setter Property="Foreground" Value="{StaticResource CoolingBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Reçete tipinin renk noktası -->
+        <Style x:Key="TypeDot" TargetType="Ellipse">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="Fill" Value="{StaticResource IdleBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RecipeType}" Value="1">
+                    <Setter Property="Fill" Value="{StaticResource TemperingBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RecipeType}" Value="2">
+                    <Setter Property="Fill" Value="{StaticResource NitridingBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RecipeType}" Value="3">
+                    <Setter Property="Fill" Value="{StaticResource OxidationBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- İzleme tablosunun satırı: çalışan adım mavi çerçeveli, biten ve atlanacak adım soluk -->
+        <Style x:Key="WatchRow" TargetType="Border">
+            <Setter Property="Height" Value="40" />
+            <Setter Property="BorderBrush" Value="#152036" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFaded}" Value="True">
+                    <Setter Property="Opacity" Value="0.6" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                    <Setter Property="Background" Value="#12284A" />
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                    <Setter Property="BorderThickness" Value="1" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateLevel}" Value="Target">
+                    <Setter Property="BorderBrush" Value="{StaticResource TargetBrush}" />
+                    <Setter Property="BorderThickness" Value="1" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- İzleme tablosunun sütun başlığı ve değeri -->
+        <Style x:Key="ReadHead" TargetType="TextBlock" BasedOn="{StaticResource LabelText}">
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Padding" Value="0,0,14,0" />
+        </Style>
+        <Style x:Key="ReadValue" TargetType="TextBlock">
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Padding" Value="0,0,14,0" />
+            <Setter Property="FontSize" Value="14.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="—">
+                    <Setter Property="Foreground" Value="#3F4F6E" />
+                    <Setter Property="FontWeight" Value="Normal" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Değer sütunları: vakum adımında görünmez ama genişliğini korur; durum sütunu her satırda aynı hizada kalır -->
+        <Style x:Key="ValueCells" TargetType="StackPanel">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsVacuum}" Value="True">
+                    <Setter Property="Visibility" Value="Hidden" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Durum yazısı: biten gri, çalışan mavi, atlanacak ve gidilecek turuncu -->
+        <Style x:Key="StateText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource SoftTextBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StateLevel}" Value="Done">
+                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateLevel}" Value="Run">
                     <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                    <Setter Property="FontWeight" Value="SemiBold" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateLevel}" Value="Skip">
+                    <Setter Property="Foreground" Value="{StaticResource TargetBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StateLevel}" Value="Target">
+                    <Setter Property="Foreground" Value="{StaticResource TargetBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Düzenleme tablosunun satırı: çalışan adım mavi çerçeveli, değişen adım mavi zeminli, biten adım soluk -->
+        <Style x:Key="EditRow" TargetType="Border">
+            <Setter Property="Height" Value="42" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPast}" Value="True">
+                    <Setter Property="Opacity" Value="0.55" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsChanged}" Value="True">
+                    <Setter Property="Background" Value="#10233F" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsActiveStep}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -86,6 +210,8 @@
         <!-- Sonuç mesajı: başarıda yeşil, hatada kırmızı -->
         <Style x:Key="ResultText" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource SoftTextBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FontSize" Value="13" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding MessageLevel}" Value="Ok">
                     <Setter Property="Foreground" Value="{StaticResource OkTextBrush}" />
@@ -96,231 +222,500 @@
             </Style.Triggers>
         </Style>
 
+        <!-- "Şimdi" kartındaki ölçülen değer: bant dışındaysa sarı -->
+        <Style x:Key="MetricValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="22" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsWarn}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource WarnBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Notlar düğmesi: çerçevesiz mavi yazı; panel açıkken tıklamayı almaz -->
+        <Style x:Key="NotesButton" TargetType="ToggleButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" Padding="4,2">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding NotesLabel}" Foreground="{StaticResource AccentBrush}" FontSize="13" FontWeight="SemiBold" />
+                                <Path Data="M0,0 L4,4 L8,0" Stroke="{StaticResource AccentBrush}" StrokeThickness="1.6" Margin="7,3,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="IsHitTestVisible" Value="False" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
     </UserControl.Resources>
 
     <Grid>
 
-        <!-- Program yokken -->
+        <!-- Çalışan program yokken -->
         <Border Style="{StaticResource Panel}">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <TextBlock Text="Çalışan program yok" FontSize="26" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" />
-                <TextBlock Text="Program başlatmak için Reçeteler sayfasından bir reçete seçin." Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,8,0,0" />
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Çalışan program yok" FontSize="24" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="Program, Reçeteler sayfasından başlatılır." Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,8,0,0" />
             </StackPanel>
         </Border>
 
-        <!-- Program varken -->
-        <Grid Background="{StaticResource PageBrush}" Visibility="{Binding HasProgram, Converter={StaticResource BoolToVis}}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="16" />
-                <ColumnDefinition Width="380" />
-            </Grid.ColumnDefinitions>
+        <Border Style="{StaticResource Panel}" Padding="18,14" Visibility="{Binding HasProgram, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
 
-            <Grid Grid.Column="0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="16" />
-                    <RowDefinition Height="*" MinHeight="260" />
-                </Grid.RowDefinitions>
+                <!-- BAŞLIK: reçete adı, şarj kutusu ve iki müdahale düğmesi -->
+                <DockPanel DockPanel.Dock="Top">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
 
-                <!-- ÇALIŞAN REÇETE -->
-                <Border Grid.Row="0" Style="{StaticResource Panel}" Padding="20,14">
-                    <StackPanel>
-
-                        <DockPanel Margin="0,0,0,10">
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                <Button Content="Adım Ekle" Command="{Binding AddStepCommand}" Margin="0,0,8,0" />
-                                <Button Content="Vazgeç" Command="{Binding RevertCommand}" Margin="0,0,8,0" />
-                                <Button Content="Değişikliği Uygula" Command="{Binding ApplyCommand}"
-                                        Background="{StaticResource NavActiveBrush}" BorderBrush="{StaticResource AccentBrush}" />
+                        <!-- Şarj kutusu: kod, ağırlık ve notlar paneli -->
+                        <Border x:Name="BatchBox" Height="44" Padding="14,0,8,0" CornerRadius="6"
+                                Background="{StaticResource PageBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <StackPanel Margin="0,0,16,0">
+                                    <TextBlock Text="Şarj" Style="{StaticResource LabelText}" FontSize="11" />
+                                    <TextBlock Text="{Binding BatchCode}" FontSize="13" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,14,0">
+                                    <TextBlock Text="Ağırlık" Style="{StaticResource LabelText}" FontSize="11" />
+                                    <TextBlock Text="{Binding LoadKgDisplay}" FontSize="13" FontWeight="SemiBold" />
+                                </StackPanel>
+                                <ToggleButton Style="{StaticResource NotesButton}" IsChecked="{Binding IsNotesOpen, Mode=TwoWay}" VerticalAlignment="Center" />
                             </StackPanel>
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="ÇALIŞAN REÇETE" Style="{StaticResource PanelTitle}" />
-                                <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
+                        </Border>
+
+                        <Popup IsOpen="{Binding IsNotesOpen, Mode=TwoWay}" StaysOpen="False"
+                               PlacementTarget="{Binding ElementName=BatchBox}" Placement="Bottom" VerticalOffset="8" AllowsTransparency="True">
+                            <Border Width="400" MaxHeight="560" Margin="0,0,12,12" Padding="18,16" CornerRadius="8"
+                                    Background="{StaticResource CardBrush}" BorderBrush="{StaticResource ButtonLineBrush}" BorderThickness="1"
+                                    TextElement.Foreground="{StaticResource TextBrush}">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="Black" BlurRadius="14" ShadowDepth="3" Opacity="0.5" />
+                                </Border.Effect>
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top">
+                                        <TextBlock Text="ŞARJ BİLGİSİ" Style="{StaticResource PanelTitle}" />
+                                        <TextBlock Text="{Binding BatchCode}" FontSize="15" FontWeight="SemiBold" Margin="0,2,0,12" />
+
+                                        <TextBlock Text="Şarj ağırlığı (kg)" Style="{StaticResource LabelText}" Margin="0,0,0,5" />
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBox Width="130" Text="{Binding LoadKgText, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Right" />
+                                            <Button Content="Kaydet" Command="{Binding SaveLoadCommand}" Margin="8,0,0,0" />
+                                        </StackPanel>
+
+                                        <TextBlock Text="Yeni not" Style="{StaticResource LabelText}" Margin="0,14,0,5" />
+                                        <TextBox Height="72" Text="{Binding NewNote, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap"
+                                                 VerticalScrollBarVisibility="Auto" MaxLength="2000" FontSize="14" />
+                                        <Button Content="Not Ekle" Command="{Binding AddNoteCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" />
+
+                                        <TextBlock Text="{Binding InfoMessage}" Foreground="{StaticResource WarnTextBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,8,0,0" />
+                                        <TextBlock Text="NOTLAR (yeniden eskiye)" Style="{StaticResource PanelTitle}" Margin="0,10,0,8" />
+                                    </StackPanel>
+
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding Notes}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,6" Padding="12,9" CornerRadius="6" Background="{StaticResource PageBrush}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding Header}" Style="{StaticResource LabelText}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </DockPanel>
+                            </Border>
+                        </Popup>
+
+                        <!-- Müdahale düğmeleri yalnızca izleme halinde görünür -->
+                        <StackPanel Orientation="Horizontal" Visibility="{Binding IsWatch, Converter={StaticResource BoolToVis}}">
+                            <Button Content="Adıma git…" Command="{Binding EnterJumpCommand}" Height="44" Padding="18,0" Margin="10,0,0,0" Background="Transparent" />
+                            <Button Content="Reçeteyi değiştir" Command="{Binding EnterEditCommand}" Height="44" Padding="18,0" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="ÇALIŞAN PROGRAM" Style="{StaticResource PanelTitle}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                            <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" VerticalAlignment="Center" />
+                            <Border Height="24" CornerRadius="12" Padding="10,0" Margin="12,2,0,0" VerticalAlignment="Center"
+                                    BorderBrush="{StaticResource ButtonLineBrush}" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Style="{StaticResource TypeDot}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding TypeText}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SoftTextBrush}" Margin="7,0,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock Text="{Binding InfoLine}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,2,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- İZLEME: "Şimdi" ve "Sıradaki" kartları -->
+                <Grid DockPanel.Dock="Top" Margin="0,12,0,0" Visibility="{Binding IsWatch, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="320" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Padding="16,12" CornerRadius="8" Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource AccentBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" Height="26" CornerRadius="13" Padding="12,0" Background="{StaticResource WarnBackBrush}" VerticalAlignment="Center"
+                                        Visibility="{Binding HasNowBadge, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding NowBadge}" Foreground="{StaticResource WarnTextBrush}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="ŞİMDİ" Foreground="{StaticResource AccentBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                    <TextBlock Text="{Binding NowTitle}" FontSize="19" FontWeight="Bold" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DockPanel>
+
+                            <!-- Ölçülen değerler; altlarında set değeri -->
+                            <ItemsControl ItemsSource="{Binding NowItems}" Margin="0,10,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0" Padding="0,0,22,0" Margin="0,0,22,0" MinWidth="120">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Label}" Style="{StaticResource LabelText}" FontSize="11.5" />
+                                                <TextBlock Text="{Binding Value}" Style="{StaticResource MetricValue}" />
+                                                <TextBlock Text="{Binding Sub}" Style="{StaticResource LabelText}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <ProgressBar Height="6" Margin="0,10,0,0" Minimum="0" Maximum="100" Value="{Binding StepProgress, Mode=OneWay}"
+                                         Background="{StaticResource LineBrush}" Foreground="{StaticResource AccentBrush}" BorderThickness="0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Padding="16,12" CornerRadius="8" Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock Text="SIRADAKİ" Style="{StaticResource PanelTitle}" FontWeight="Bold" />
+                            <TextBlock Text="{Binding NextTitle}" FontSize="17" FontWeight="Bold" Margin="0,6,0,0" />
+                            <TextBlock Text="{Binding NextMain}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0" />
+                            <TextBlock Text="{Binding NextSub}" Foreground="{StaticResource SoftTextBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- ADIMA GİT: hedef, sonucu anlatan cümleler ve onay -->
+                <Border DockPanel.Dock="Top" Margin="0,12,0,0" Padding="16,12" CornerRadius="8" Background="#2A1F08"
+                        BorderBrush="{StaticResource TargetBrush}" BorderThickness="1"
+                        Visibility="{Binding IsJump, Converter={StaticResource BoolToVis}}">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="ADIMA GİT" Foreground="{StaticResource TargetBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,14,0" />
+                            <ComboBox Width="240" ItemsSource="{Binding GotoSteps}" DisplayMemberPath="Text" SelectedItem="{Binding SelectedGotoStep}" />
+                            <TextBlock Text="dakika" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="12,0,8,0" />
+                            <TextBox Width="64" Text="{Binding GotoMinuteText, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Right" Padding="6,5" FontSize="14" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="Vazgeç" Command="{Binding CancelModeCommand}" Height="40" Padding="18,0" Background="Transparent" />
+                            <Button Content="Git" Command="{Binding GotoCommand}" Height="40" Padding="30,0" Margin="8,0,0,0"
+                                    Background="#5A4310" BorderBrush="{StaticResource TargetBrush}" />
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Center" Margin="18,0">
+                            <TextBlock Text="{Binding JumpSummary}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding JumpDetail}" Foreground="{StaticResource SoftTextBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- REÇETEYİ DEĞİŞTİR: uyarı şeridi -->
+                <Border DockPanel.Dock="Top" Margin="0,12,0,0" Padding="16,10" CornerRadius="8" Background="#10233F"
+                        BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
+                        Visibility="{Binding IsEdit, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="ÇALIŞAN REÇETEYİ DEĞİŞTİRİYORSUNUZ" Foreground="{StaticResource AccentBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,14,0" />
+                        <TextBlock Text="Değişiklikler “Değişikliği Uygula”ya basınca PLC'ye gider. Biten adımlar kilitlidir; kayıtlı reçete değişmez."
+                                   Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <TextBlock DockPanel.Dock="Top" Text="{Binding Message}" Style="{StaticResource ResultText}" Margin="0,6,0,0" />
+
+                <!-- ZAMAN ÇİZGİSİ: plan, geçilen kısım, ölçülen sıcaklık ve gaz şeritleri; her halde aynı yerde -->
+                <Border DockPanel.Dock="Top" Margin="0,6,0,0" Padding="10,8,6,8" CornerRadius="6"
+                        Background="{StaticResource PageBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                    <DockPanel>
+                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="4,0,8,4">
+                            <TextBlock Text="PROGRAM ZAMAN ÇİZGİSİ" Style="{StaticResource PanelTitle}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="Ölçülen" Style="{StaticResource LabelText}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="18" Height="3" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="Geçilen" Style="{StaticResource LabelText}" Margin="6,0,16,0" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="18" Height="4" Fill="{StaticResource OkTextBrush}" VerticalAlignment="Center" />
+                            <TextBlock DockPanel.Dock="Right" Text="Plan" Style="{StaticResource LabelText}" Margin="6,0,16,0" VerticalAlignment="Center" />
+                            <Rectangle DockPanel.Dock="Right" Width="18" Height="2" Stroke="{StaticResource SoftTextBrush}" StrokeDashArray="2 1.5" VerticalAlignment="Center" />
                         </DockPanel>
+                        <controls:GasLanes DockPanel.Dock="Bottom" Data="{Binding LaneData}" Margin="0,4,0,0" />
+                        <controls:ProfileChart Data="{Binding ChartData}" Height="200"
+                                               TargetX="{Binding TargetX, Mode=TwoWay}"
+                                               TargetText="{Binding TargetText}"
+                                               CanDrag="{Binding CanDragTarget}" />
+                    </DockPanel>
+                </Border>
 
-                        <!-- Sütun başlıkları -->
-                        <Grid Margin="0,0,0,6">
+                <!-- REÇETEYİ DEĞİŞTİR: değişiklik listesi ve onay; tablonun hemen altında -->
+                <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0" Visibility="{Binding IsEdit, Converter={StaticResource BoolToVis}}">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="Vazgeç" Command="{Binding CancelModeCommand}" Height="42" Padding="20,0" Background="Transparent" />
+                        <Button Content="Değişikliği Uygula" Command="{Binding ApplyCommand}" Height="42" Padding="24,0" Margin="8,0,0,0"
+                                Background="{StaticResource NavActiveBrush}" BorderBrush="{StaticResource AccentBrush}" />
+                    </StackPanel>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Text="{Binding ChangeSummary}" FontWeight="Bold" />
+                        <TextBlock Text="{Binding ChangeDetail}" Foreground="{StaticResource SoftTextBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Grid Margin="0,10,0,0">
+
+                    <!-- İZLEME TABLOSU: salt okunur; değerler birimleriyle, sağda adımın durumu -->
+                    <DockPanel Visibility="{Binding IsReadTable, Converter={StaticResource BoolToVis}}">
+                        <Border DockPanel.Dock="Top" Padding="5,0,0,6" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="No" Width="44" TextAlignment="Center" Style="{StaticResource LabelText}" />
+                                <TextBlock Text="Adım" Width="92" Style="{StaticResource LabelText}" />
+                                <TextBlock Text="Ne yapılır" Width="300" Style="{StaticResource LabelText}" />
+                                <TextBlock Text="Süre" Width="90" Style="{StaticResource ReadHead}" />
+                                <TextBlock Text="Azot" Width="104" Style="{StaticResource ReadHead}" />
+                                <TextBlock Text="Amonyak" Width="110" Style="{StaticResource ReadHead}" Visibility="{Binding IsNitriding, Converter={StaticResource BoolToVis}}" />
+                                <TextBlock Text="CO₂" Width="76" Style="{StaticResource ReadHead}" Visibility="{Binding IsNitriding, Converter={StaticResource BoolToVis}}" />
+                                <TextBlock Text="Su" Width="70" Style="{StaticResource ReadHead}" Visibility="{Binding IsOxidation, Converter={StaticResource BoolToVis}}" />
+                                <TextBlock Text="H₂ oto" Width="96" Style="{StaticResource ReadHead}" Visibility="{Binding IsNitriding, Converter={StaticResource BoolToVis}}" />
+                                <TextBlock Text="Gsoak" Width="88" Style="{StaticResource ReadHead}" />
+                                <TextBlock Text="Fan" Width="80" Style="{StaticResource ReadHead}" />
+                                <TextBlock Text="Durum" Style="{StaticResource LabelText}" Margin="20,0,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding Lines}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource WatchRow}">
+                                            <DockPanel>
+                                                <Border DockPanel.Dock="Left" Width="5" Style="{StaticResource StepStripe}" />
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding StepNo}" Width="44" TextAlignment="Center" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding KindText}" Width="92" Style="{StaticResource KindText}" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding Main}" Width="300" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+
+                                                    <!-- Değer sütunları; vakum adımında gizlenir ama yerini korur, üstüne açıklama yazılır -->
+                                                    <Grid>
+                                                        <TextBlock Text="{Binding Note}" Foreground="{StaticResource MutedBrush}" FontSize="13" VerticalAlignment="Center" Margin="46,0,0,0"
+                                                                   Visibility="{Binding IsVacuum, Converter={StaticResource BoolToVis}}" />
+
+                                                        <StackPanel Orientation="Horizontal" Style="{StaticResource ValueCells}">
+                                                            <TextBlock Text="{Binding Duration}" Width="90" Style="{StaticResource ReadValue}" />
+                                                            <TextBlock Text="{Binding N2}" Width="104" Style="{StaticResource ReadValue}" />
+                                                            <TextBlock Text="{Binding NH3}" Width="110" Style="{StaticResource ReadValue}" Visibility="{Binding ShowNitriding, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock Text="{Binding CO2}" Width="76" Style="{StaticResource ReadValue}" Visibility="{Binding ShowNitriding, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock Text="{Binding Water}" Width="70" Style="{StaticResource ReadValue}" Visibility="{Binding ShowWater, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock Text="{Binding H2}" Width="96" Style="{StaticResource ReadValue}" Visibility="{Binding ShowNitriding, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock Text="{Binding Gsoak}" Width="88" Style="{StaticResource ReadValue}" />
+                                                            <TextBlock Text="{Binding Fan}" Width="80" Style="{StaticResource ReadValue}" />
+                                                        </StackPanel>
+                                                    </Grid>
+
+                                                    <TextBlock Text="{Binding StateText}" Style="{StaticResource StateText}" Margin="20,0,0,0" />
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+
+                    <!-- DÜZENLEME TABLOSU: biten adımlar kilitli, çalışan adımın tipi değişmez, değişen adım mavi zeminli -->
+                    <DockPanel Visibility="{Binding IsEdit, Converter={StaticResource BoolToVis}}">
+
+                        <Grid DockPanel.Dock="Top">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="46" />
-                                <ColumnDefinition Width="118" />
-                                <ColumnDefinition Width="88" />
+                                <ColumnDefinition Width="124" />
                                 <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="70" />
+                                <ColumnDefinition Width="76" />
+                                <ColumnDefinition Width="10" />
                                 <ColumnDefinition Width="80" />
-                                <ColumnDefinition Width="80" />
-                                <ColumnDefinition Width="72" />
-                                <ColumnDefinition Width="80" />
-                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="86" />
                                 <ColumnDefinition Width="66" />
                                 <ColumnDefinition Width="46" />
+                                <ColumnDefinition Width="10" />
                                 <ColumnDefinition Width="56" />
-                                <ColumnDefinition Width="72" />
+                                <ColumnDefinition Width="76" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="70" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="2" Grid.ColumnSpan="3" BorderBrush="{StaticResource HeatingBrush}" BorderThickness="0,0,0,2" Margin="3,0">
+                                <TextBlock Text="SICAKLIK" Style="{StaticResource GroupHead}" Foreground="{StaticResource HeatingBrush}" />
+                            </Border>
+                            <Border Grid.Column="6" Grid.ColumnSpan="4" BorderBrush="#8FB7FF" BorderThickness="0,0,0,2" Margin="3,0">
+                                <TextBlock Text="GAZLAR" Style="{StaticResource GroupHead}" Foreground="#8FB7FF" />
+                            </Border>
+                            <Border Grid.Column="11" Grid.ColumnSpan="2" BorderBrush="#FFD23B" BorderThickness="0,0,0,2" Margin="3,0">
+                                <TextBlock Text="HİDROJEN" Style="{StaticResource GroupHead}" Foreground="#FFD23B" />
+                            </Border>
+                            <Border Grid.Column="14" BorderBrush="{StaticResource MutedBrush}" BorderThickness="0,0,0,2" Margin="3,0">
+                                <TextBlock Text="FAN" Style="{StaticResource GroupHead}" Foreground="{StaticResource MutedBrush}" />
+                            </Border>
+                        </Grid>
+
+                        <Grid DockPanel.Dock="Top" Margin="0,4,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="46" />
+                                <ColumnDefinition Width="124" />
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="70" />
+                                <ColumnDefinition Width="76" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="86" />
                                 <ColumnDefinition Width="66" />
+                                <ColumnDefinition Width="46" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="56" />
+                                <ColumnDefinition Width="76" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="70" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="No" Style="{StaticResource Head}" />
                             <TextBlock Grid.Column="1" Text="Adım tipi" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="2" Text="Vakum seti mbar mutlak" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="3" Text="Zaman aşımı dk" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="4" Text="Sıcaklık °C" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="5" Text="Süre dk" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="6" Text="Gsoak °C" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="7" Text="Azot L/h" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="8" Text="Amonyak L/h" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="9" Text="CO₂ %" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="10" Text="Su" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="11" Text="H₂ oto" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="12" Text="H₂ seti %" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="13" Text="Fan %" Style="{StaticResource Head}" />
-                            <TextBlock Grid.Column="14" Text="Durum" Style="{StaticResource Head}" TextAlignment="Left" Margin="10,0,0,0" />
+                            <TextBlock Grid.Column="2" Text="Hedef °C" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="3" Text="Süre dk" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="4" Text="Gsoak °C" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="6" Text="Azot L/h" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="7" Text="Amonyak L/h" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="8" Text="CO₂ %" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="9" Text="Su" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="11" Text="Oto" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="12" Text="Set %" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="14" Text="Hız %" Style="{StaticResource Head}" />
+                            <TextBlock Grid.Column="15" Text="Durum" Style="{StaticResource LabelText}" Margin="16,0,0,0" VerticalAlignment="Bottom" />
                         </Grid>
 
-                        <!-- Adım satırları -->
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="260">
+                        <DockPanel DockPanel.Dock="Bottom" LastChildFill="False" Margin="0,6,0,0">
+                            <Button Content="+ Adım ekle" Command="{Binding AddStepCommand}" Height="34" />
+                            <TextBlock Text="Yeni ısıtma adımı soğutmadan önceye eklenir." Style="{StaticResource LabelText}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                        </DockPanel>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding Steps}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Height="42" Margin="0,0,0,3" CornerRadius="5" Style="{StaticResource StepRow}">
+                                        <Border Style="{StaticResource EditRow}" Margin="0,0,0,3">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="46" />
+                                                    <ColumnDefinition Width="124" />
+                                                    <ColumnDefinition Width="80" />
+                                                    <ColumnDefinition Width="70" />
+                                                    <ColumnDefinition Width="76" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="80" />
+                                                    <ColumnDefinition Width="86" />
+                                                    <ColumnDefinition Width="66" />
+                                                    <ColumnDefinition Width="46" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="56" />
+                                                    <ColumnDefinition Width="76" />
+                                                    <ColumnDefinition Width="10" />
+                                                    <ColumnDefinition Width="70" />
                                                     <ColumnDefinition Width="*" />
                                                 </Grid.ColumnDefinitions>
 
-                                                <Border Grid.Column="0" Width="5" CornerRadius="4,0,0,4" HorizontalAlignment="Left" Style="{StaticResource StepStripe}" />
+                                                <Border Grid.Column="0" Width="5" CornerRadius="4,0,0,4" HorizontalAlignment="Left" DataContext="{Binding Step}" Style="{StaticResource StepStripe}" />
                                                 <TextBlock Grid.Column="0" Text="{Binding Step.StepNo}" FontSize="15" FontWeight="Bold" Margin="5,0,0,0" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                <ComboBox Grid.Column="1" Margin="3,0" Height="32" VerticalAlignment="Center" IsEnabled="{Binding CanChangeType}"
+                                                          ItemsSource="{Binding DataContext.StepTypes, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                          DisplayMemberPath="Text" SelectedValuePath="Value" SelectedValue="{Binding Step.StepType}" />
 
-                                                <!-- Değer kutuları: biten adımda ve yetkisiz kullanıcıda kilitli -->
-                                                <Grid Grid.Column="1" IsEnabled="{Binding CanEdit}">
+                                                <!-- Değer kutuları: biten adımda kilitli -->
+                                                <Grid Grid.Column="2" Grid.ColumnSpan="13" DataContext="{Binding Step}"
+                                                      IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=Border}}">
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="118" />
-                                                        <ColumnDefinition Width="88" />
                                                         <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="70" />
+                                                        <ColumnDefinition Width="76" />
+                                                        <ColumnDefinition Width="10" />
                                                         <ColumnDefinition Width="80" />
-                                                        <ColumnDefinition Width="80" />
-                                                        <ColumnDefinition Width="72" />
-                                                        <ColumnDefinition Width="80" />
-                                                        <ColumnDefinition Width="80" />
+                                                        <ColumnDefinition Width="86" />
                                                         <ColumnDefinition Width="66" />
                                                         <ColumnDefinition Width="46" />
+                                                        <ColumnDefinition Width="10" />
                                                         <ColumnDefinition Width="56" />
-                                                        <ColumnDefinition Width="72" />
-                                                        <ColumnDefinition Width="66" />
-                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="76" />
+                                                        <ColumnDefinition Width="10" />
+                                                        <ColumnDefinition Width="70" />
                                                     </Grid.ColumnDefinitions>
 
-                                                    <ComboBox Grid.Column="0" Margin="3,0" Height="32" VerticalAlignment="Center" IsEnabled="{Binding CanChangeType}"
-                                                              ItemsSource="{Binding DataContext.StepTypes, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                              DisplayMemberPath="Text" SelectedValuePath="Value" SelectedValue="{Binding Step.StepType}" />
+                                                    <!-- Vakum adımı: cümle halinde -->
+                                                    <StackPanel Grid.Column="0" Grid.ColumnSpan="11" Orientation="Horizontal" VerticalAlignment="Center"
+                                                                Visibility="{Binding IsVacuum, Converter={StaticResource BoolToVis}}">
+                                                        <TextBox Style="{StaticResource Cell}" Width="74" Text="{Binding VacSetPoint}" />
+                                                        <TextBlock Text="mbar mutlak basınca in   ·   zaman aşımı" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="6,0" />
+                                                        <TextBox Style="{StaticResource Cell}" Width="64" Text="{Binding VacTimeout}" />
+                                                        <TextBlock Text="dk" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="6,0" />
+                                                    </StackPanel>
 
-                                                    <TextBox Grid.Column="1" Style="{StaticResource Cell}" Text="{Binding Step.VacSetPoint}" Visibility="{Binding Step.IsVacuum, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="2" Style="{StaticResource Cell}" Text="{Binding Step.VacTimeout}" Visibility="{Binding Step.IsVacuum, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="3" Style="{StaticResource Cell}" Text="{Binding Step.TargetTemp}" Visibility="{Binding Step.ShowTemp, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="4" Style="{StaticResource Cell}" Text="{Binding Step.StepTime}" Visibility="{Binding Step.IsHeating, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="5" Style="{StaticResource Cell}" Text="{Binding Step.GSoak}" Visibility="{Binding Step.IsHeating, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="6" Style="{StaticResource Cell}" Text="{Binding Step.N2Flow}" Visibility="{Binding Step.ShowN2, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="7" Style="{StaticResource Cell}" Text="{Binding Step.NH3Flow}" Visibility="{Binding Step.ShowNH3, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="8" Style="{StaticResource Cell}" Text="{Binding Step.CO2Perc}" Visibility="{Binding Step.ShowCO2, Converter={StaticResource BoolToVis}}" />
-                                                    <CheckBox Grid.Column="9" IsChecked="{Binding Step.WaterOn}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding Step.ShowWater, Converter={StaticResource BoolToVis}}" />
-                                                    <CheckBox Grid.Column="10" IsChecked="{Binding Step.H2Auto}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding Step.ShowH2, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="11" Style="{StaticResource Cell}" Text="{Binding Step.H2SetPercent, StringFormat=0.0}" Visibility="{Binding Step.ShowH2Set, Converter={StaticResource BoolToVis}}" />
-                                                    <TextBox Grid.Column="12" Style="{StaticResource Cell}" Text="{Binding Step.FanSpeed}" Visibility="{Binding Step.ShowFan, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBox Grid.Column="0" Style="{StaticResource Cell}" Text="{Binding TargetTemp}" Visibility="{Binding ShowTemp, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBox Grid.Column="1" Style="{StaticResource Cell}" Text="{Binding StepTime}" Visibility="{Binding IsHeating, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBox Grid.Column="2" Style="{StaticResource DimCell}" Text="{Binding GSoak}" Visibility="{Binding IsHeating, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Grid.Column="1" Grid.ColumnSpan="2" Text="°C altına soğut" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                               Visibility="{Binding IsCooling, Converter={StaticResource BoolToVis}}" />
 
-                                                    <DockPanel Grid.Column="13" Margin="10,0,6,0">
-                                                        <Button DockPanel.Dock="Right" Content="Sil" Height="30" Padding="10,0" FontSize="13"
-                                                                Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"
-                                                                Command="{Binding DataContext.RemoveStepCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
-                                                        <TextBlock Text="{Binding StateText}" Style="{StaticResource StateText}" VerticalAlignment="Center" />
-                                                    </DockPanel>
+                                                    <TextBox Grid.Column="4" Style="{StaticResource DimCell}" Text="{Binding N2Flow}" Visibility="{Binding ShowN2, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBox Grid.Column="5" Style="{StaticResource DimCell}" Text="{Binding NH3Flow}" Visibility="{Binding ShowNH3, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBox Grid.Column="6" Style="{StaticResource DimCell}" Text="{Binding CO2Perc}" Visibility="{Binding ShowCO2, Converter={StaticResource BoolToVis}}" />
+                                                    <CheckBox Grid.Column="7" IsChecked="{Binding WaterOn}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding ShowWater, Converter={StaticResource BoolToVis}}" />
+
+                                                    <CheckBox Grid.Column="9" IsChecked="{Binding H2Auto}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding ShowH2, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBox Grid.Column="10" Style="{StaticResource Cell}" Text="{Binding H2SetPercent, StringFormat=0.0}" Visibility="{Binding ShowH2Set, Converter={StaticResource BoolToVis}}" />
+
+                                                    <TextBox Grid.Column="12" Style="{StaticResource Cell}" Text="{Binding FanSpeed}" Visibility="{Binding ShowFan, Converter={StaticResource BoolToVis}}" />
                                                 </Grid>
+
+                                                <!-- Durum ve silme düğmesi -->
+                                                <DockPanel Grid.Column="15" Margin="16,0,6,0">
+                                                    <Button DockPanel.Dock="Right" Content="Sil" Height="30" Padding="10,0" FontSize="13"
+                                                            Visibility="{Binding CanRemove, Converter={StaticResource BoolToVis}}"
+                                                            Command="{Binding DataContext.RemoveStepCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                                                    <TextBlock Text="{Binding StateText}" Foreground="{StaticResource SoftTextBrush}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                </DockPanel>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-
-                        <TextBlock Text="{Binding Message}" Style="{StaticResource ResultText}" Margin="0,10,0,0" TextWrapping="Wrap" FontSize="14" />
-                    </StackPanel>
-                </Border>
-
-                <!-- GRAFİK VE ADIMA GİT -->
-                <Border Grid.Row="2" Style="{StaticResource Panel}" Padding="18,14">
-                    <DockPanel>
-
-                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                            <TextBlock Text="PROGRAM ZAMAN ÇİZGİSİ" Style="{StaticResource PanelTitle}" VerticalAlignment="Center" />
-                            <TextBlock DockPanel.Dock="Right" Text="Gidilecek yer" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,0,0" VerticalAlignment="Center" />
-                            <Rectangle DockPanel.Dock="Right" Width="3" Height="14" Fill="{StaticResource TargetBrush}" VerticalAlignment="Center" />
-                            <TextBlock DockPanel.Dock="Right" Text="Ölçülen sıcaklık" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,16,0" VerticalAlignment="Center" />
-                            <Ellipse DockPanel.Dock="Right" Width="10" Height="10" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" />
-                            <TextBlock DockPanel.Dock="Right" Text="Şu anki yer" Foreground="{StaticResource SoftTextBrush}" FontSize="12" Margin="6,0,16,0" VerticalAlignment="Center" />
-                            <Rectangle DockPanel.Dock="Right" Width="3" Height="14" Fill="{StaticResource OkTextBrush}" VerticalAlignment="Center" />
-                        </DockPanel>
-
-                        <!-- Adıma git: grafikten sürükleyerek ya da elle -->
-                        <DockPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                                <TextBlock Text="Adıma git" Foreground="{StaticResource SoftTextBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
-                                <ComboBox Width="250" ItemsSource="{Binding GotoSteps}" DisplayMemberPath="Text" SelectedItem="{Binding SelectedGotoStep}" />
-                                <TextBlock Text="dakika" Style="{StaticResource LabelText}" VerticalAlignment="Center" Margin="14,0,8,0" />
-                                <TextBox Width="70" Text="{Binding GotoMinuteText, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Right" Padding="6,5" FontSize="14" VerticalAlignment="Center" />
-                                <Button Content="Git" Command="{Binding GotoCommand}" Margin="10,0,0,0" Padding="24,0"
-                                        Background="#3A2C0B" BorderBrush="{StaticResource TargetBrush}" />
-                                <Button Content="Seçimi Kaldır" Command="{Binding ClearTargetCommand}" Margin="8,0,0,0" />
-                            </StackPanel>
-                            <TextBlock Text="Grafiğe tıklayıp sürükleyerek gidilecek adımı ve dakikayı seçin. Yalnızca ısıtma ya da soğutmadayken ve kaydedilmemiş değişiklik yokken seçilebilir."
-                                       Style="{StaticResource LabelText}" TextWrapping="Wrap" VerticalAlignment="Center" Margin="20,0,0,0" />
-                        </DockPanel>
-
-                        <controls:ProfileChart Data="{Binding ChartData}"
-                                               TargetX="{Binding TargetX, Mode=TwoWay}"
-                                               TargetText="{Binding TargetText}"
-                                               CanDrag="{Binding CanDragTarget}" />
                     </DockPanel>
-                </Border>
-            </Grid>
-
-            <!-- ŞARJ BİLGİSİ -->
-            <Border Grid.Column="2" Style="{StaticResource Panel}" Padding="18,14">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Top">
-                        <TextBlock Text="ŞARJ BİLGİSİ" Style="{StaticResource PanelTitle}" />
-                        <TextBlock Text="{Binding BatchCode}" FontSize="15" FontWeight="SemiBold" Margin="0,2,0,14" />
-
-                        <TextBlock Text="Şarj ağırlığı (kg)" Style="{StaticResource LabelText}" Margin="0,0,0,5" />
-                        <StackPanel Orientation="Horizontal">
-                            <TextBox Width="130" Text="{Binding LoadKgText, UpdateSourceTrigger=PropertyChanged}" TextAlignment="Right" />
-                            <Button Content="Kaydet" Command="{Binding SaveLoadCommand}" Margin="8,0,0,0" />
-                        </StackPanel>
-
-                        <TextBlock Text="Yeni not" Style="{StaticResource LabelText}" Margin="0,18,0,5" />
-                        <TextBox Height="84" Text="{Binding NewNote, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap"
-                                 VerticalScrollBarVisibility="Auto" MaxLength="2000" FontSize="14" />
-                        <Button Content="Not Ekle" Command="{Binding AddNoteCommand}" HorizontalAlignment="Left" Margin="0,8,0,0" />
-
-                        <TextBlock Text="{Binding InfoMessage}" Foreground="{StaticResource WarnTextBrush}" FontSize="13" TextWrapping="Wrap" Margin="0,8,0,0" />
-
-                        <TextBlock Text="NOTLAR (yeniden eskiye)" Style="{StaticResource PanelTitle}" FontSize="12" Margin="0,14,0,8" />
-                    </StackPanel>
-
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Notes}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Margin="0,0,0,6" Padding="12,9" CornerRadius="6" Background="{StaticResource CardBrush}">
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Header}" Style="{StaticResource LabelText}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </DockPanel>
-            </Border>
-        </Grid>
+                </Grid>
+            </DockPanel>
+        </Border>
     </Grid>
 </UserControl>

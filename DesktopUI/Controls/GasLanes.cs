@@ -9,11 +9,12 @@ namespace DesktopUI.Controls
     {
         public double X1 { get; set; }
         public double X2 { get; set; }
-        public string Text { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;         // Birimiyle değer: "500 L/h", "%40,0"
+        public string ShortText { get; set; } = string.Empty;    // Çubuk darsa yazılan birimsiz değer
         public bool IsError { get; set; }
     }
 
-    // Tek bir gazın (ya da fanın) şeridi
+    // Tek bir gazın şeridi
     public class GasLane
     {
         public string Name { get; set; } = string.Empty;
@@ -58,7 +59,7 @@ namespace DesktopUI.Controls
             return new Size(0, count * (LaneHeight + LaneGap));
         }
 
-        // Her şeridin adını sola, çubuklarını zaman eksenindeki yerlerine çizer; değer çubuğa sığmıyorsa yazılmaz.
+        // Her şeridin adını sola, çubuklarını zaman eksenindeki yerlerine çizer; değer birimiyle yazılır.
         protected override void OnRender(DrawingContext dc)
         {
             var data = Data;
@@ -88,7 +89,12 @@ namespace DesktopUI.Controls
                     var rect = new Rect(x1, y, x2 - x1, LaneHeight);
                     dc.DrawRoundedRectangle(bar.IsError ? null : fill, bar.IsError ? new Pen(ErrorBrush, 1.5) : pen, rect, 3, 3);
 
-                    var text = Format(bar.Text, bar.IsError ? ErrorBrush : ValueBrush, BoldFace, 11);
+                    // Önce birimli değer denenir; çubuğa sığmazsa birimsiz olan yazılır, o da sığmazsa hiçbiri yazılmaz.
+                    var brush = bar.IsError ? ErrorBrush : ValueBrush;
+                    var text = Format(bar.Text, brush, BoldFace, 11);
+                    if (text.Width > rect.Width - 4 && bar.ShortText.Length > 0)
+                        text = Format(bar.ShortText, brush, BoldFace, 11);
+
                     if (text.Width <= rect.Width - 4)
                         dc.DrawText(text, new Point((x1 + x2) / 2 - text.Width / 2, y + (LaneHeight - text.Height) / 2));
                 }

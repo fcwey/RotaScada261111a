@@ -203,18 +203,38 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Okuma görünümündeki adım satırı: hatalıysa kırmızı çerçeve -->
+        <!-- Okuma görünümündeki adım satırı: ince alt çizgili, hatalıysa kırmızı çerçeveli -->
         <Style x:Key="ReadRow" TargetType="Border">
-            <Setter Property="MinHeight" Value="56" />
-            <Setter Property="Margin" Value="0,0,0,5" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="Background" Value="{StaticResource CardBrush}" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="MinHeight" Value="46" />
+            <Setter Property="BorderBrush" Value="#152036" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
             <Style.Triggers>
                 <DataTrigger Binding="{Binding HasError}" Value="True">
                     <Setter Property="BorderBrush" Value="{StaticResource BadBrush}" />
+                    <Setter Property="BorderThickness" Value="1" />
                 </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Okuma tablosunun sütun başlığı: sağa yaslı -->
+        <Style x:Key="ReadHead" TargetType="TextBlock" BasedOn="{StaticResource LabelText}">
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Padding" Value="0,0,14,0" />
+        </Style>
+
+        <!-- Okuma tablosundaki değer: birimiyle yazılır; kullanılmayan değer soluk çizgidir -->
+        <Style x:Key="ReadValue" TargetType="TextBlock">
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Padding" Value="0,0,14,0" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Style.Triggers>
+                <Trigger Property="Text" Value="—">
+                    <Setter Property="Foreground" Value="#3F4F6E" />
+                    <Setter Property="FontWeight" Value="Normal" />
+                </Trigger>
             </Style.Triggers>
         </Style>
 
@@ -341,139 +361,133 @@
         <!-- OKUMA GÖRÜNÜMÜ: reçete açılınca önce bu görünür; değerler değiştirilemez -->
         <Border Grid.Column="2" Style="{StaticResource Panel}" Padding="20,16"
                 Visibility="{Binding IsReading, Converter={StaticResource BoolToVis}}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="18" />
-                    <ColumnDefinition Width="470" />
-                </Grid.ColumnDefinitions>
+            <DockPanel>
 
-                <!-- Sol: ad, başlık değerleri ve adımlar -->
-                <DockPanel Grid.Column="0">
-
-                    <DockPanel DockPanel.Dock="Top">
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Path Data="M3,11 H19 V23 H3 Z M6.5,11 V7 A4.5,4.5 0 0 1 15.5,7 V11" Stroke="{StaticResource MutedBrush}" StrokeThickness="2"
-                                  Width="22" Height="25" VerticalAlignment="Center">
-                                <Path.LayoutTransform>
-                                    <ScaleTransform ScaleX="0.7" ScaleY="0.7" />
-                                </Path.LayoutTransform>
-                            </Path>
-                            <TextBlock Text="Salt okunur" Foreground="{StaticResource MutedBrush}" FontSize="13" VerticalAlignment="Center" Margin="6,0,14,0" />
-                            <Button Content="Düzenle" Command="{Binding EditCommand}" Height="38" Padding="20,0" Margin="0,0,8,0" />
-                            <Button Content="Kopyasını aç" Command="{Binding CopyCommand}" Height="38" Padding="16,0" Background="Transparent" />
-                        </StackPanel>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Name}" FontSize="24" FontWeight="Bold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                            <Border Height="24" CornerRadius="12" Padding="10,0" Margin="14,2,0,0" VerticalAlignment="Center"
-                                    BorderBrush="{StaticResource ButtonLineBrush}" BorderThickness="1">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse Style="{StaticResource TypeDot}" Width="8" Height="8" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding TypeText}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SoftTextBrush}" Margin="7,0,0,0" />
-                                </StackPanel>
-                            </Border>
-                            <TextBlock Text="{Binding NoText}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,2,0,0" />
-                        </StackPanel>
-                    </DockPanel>
-
-                    <!-- Başlık değerleri ve hesaplanan toplamlar -->
-                    <Border DockPanel.Dock="Top" Margin="0,12,0,14" Padding="14,10,0,4" CornerRadius="6"
-                            Background="{StaticResource PageBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
-                        <ItemsControl ItemsSource="{Binding MetaItems}">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <WrapPanel />
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Margin="0,0,26,6">
-                                        <TextBlock Text="{Binding Label}" Style="{StaticResource LabelText}" FontSize="11" />
-                                        <TextBlock Text="{Binding Value}" FontSize="15" FontWeight="SemiBold" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Border>
-
-                    <TextBlock DockPanel.Dock="Bottom" Text="{Binding GeneralError}" Foreground="{StaticResource BadBrush}" FontSize="13" FontWeight="SemiBold"
-                               TextWrapping="Wrap" Margin="0,6,0,0" />
-
-                    <!-- Adımlar: her adım bir cümle, ek değerler etiketlerde -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding ReadLines}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Style="{StaticResource ReadRow}">
-                                        <DockPanel>
-                                            <Border DockPanel.Dock="Left" Width="5" CornerRadius="5,0,0,5" Style="{StaticResource StepStripe}" />
-                                            <TextBlock DockPanel.Dock="Left" Text="{Binding StepNo}" Width="42" TextAlignment="Center" FontSize="18" FontWeight="Bold" VerticalAlignment="Center" />
-                                            <TextBlock DockPanel.Dock="Left" Text="{Binding KindText}" Width="84" Style="{StaticResource KindText}" VerticalAlignment="Center" />
-                                            <StackPanel VerticalAlignment="Center" Margin="0,6,10,6">
-                                                <WrapPanel>
-                                                    <TextBlock Text="{Binding Main}" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,18,0" />
-                                                    <ItemsControl ItemsSource="{Binding Chips}" VerticalAlignment="Center">
-                                                        <ItemsControl.ItemsPanel>
-                                                            <ItemsPanelTemplate>
-                                                                <WrapPanel />
-                                                            </ItemsPanelTemplate>
-                                                        </ItemsControl.ItemsPanel>
-                                                        <ItemsControl.ItemTemplate>
-                                                            <DataTemplate>
-                                                                <Border Height="24" CornerRadius="4" Padding="9,0" Margin="0,2,6,2"
-                                                                        Background="{StaticResource PageBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
-                                                                    <TextBlock Text="{Binding}" Foreground="{StaticResource SoftTextBrush}" FontSize="12.5" VerticalAlignment="Center" />
-                                                                </Border>
-                                                            </DataTemplate>
-                                                        </ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </WrapPanel>
-                                                <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource BadBrush}" FontSize="12.5" FontWeight="SemiBold" Margin="0,3,0,0"
-                                                           Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
-                                            </StackPanel>
-                                        </DockPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                <!-- Ad, tip ve düğmeler -->
+                <DockPanel DockPanel.Dock="Top">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="Başlat…" Command="{Binding StartCommand}" Height="40" Padding="28,0" FontSize="15" Margin="0,0,8,0"
+                                Background="{StaticResource OkBackBrush}" BorderBrush="#1F6B3C" />
+                        <Button Content="PLC'de Kontrol Et" Command="{Binding ValidateCommand}" Height="40" Padding="16,0" Background="Transparent" />
+                        <Rectangle Width="1" Height="26" Fill="{StaticResource LineBrush}" Margin="12,0" />
+                        <Button Content="Düzenle" Command="{Binding EditCommand}" Height="40" Padding="20,0" Margin="0,0,8,0" />
+                        <Button Content="Kopyasını aç" Command="{Binding CopyCommand}" Height="40" Padding="16,0" Background="Transparent" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="24" FontWeight="Bold" VerticalAlignment="Center" />
+                        <Border Height="24" CornerRadius="12" Padding="10,0" Margin="14,2,0,0" VerticalAlignment="Center"
+                                BorderBrush="{StaticResource ButtonLineBrush}" BorderThickness="1">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse Style="{StaticResource TypeDot}" Width="8" Height="8" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding TypeText}" FontSize="12" FontWeight="Bold" Foreground="{StaticResource SoftTextBrush}" Margin="7,0,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding NoText}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="12,2,0,0" />
+                    </StackPanel>
                 </DockPanel>
 
-                <!-- Sağ: eğri, gaz şeritleri ve başlatma kutusu -->
-                <DockPanel Grid.Column="2">
+                <!-- Başlık değerleri ve hesaplanan toplamlar: tek satır, her değer birimiyle -->
+                <ItemsControl DockPanel.Dock="Top" ItemsSource="{Binding MetaItems}" Margin="0,8,0,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,26,4">
+                                <TextBlock Text="{Binding Label}" Foreground="{StaticResource MutedBrush}" FontSize="14" />
+                                <TextBlock Text="{Binding Value}" FontSize="14" FontWeight="SemiBold" Margin="6,0,0,0" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
 
-                    <Border DockPanel.Dock="Bottom" Margin="0,12,0,0" Padding="14" CornerRadius="6"
-                            Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
-                        <StackPanel>
-                            <TextBlock Foreground="{StaticResource BadBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,10"
-                                       Visibility="{Binding HasErrors, Converter={StaticResource BoolToVis}}">
-                                <Run Text="Reçetede" />
-                                <Run Text="{Binding ErrorSummary, Mode=OneWay}" />
-                                <Run Text="var; PLC bu reçeteyi kabul etmeyebilir." />
-                            </TextBlock>
-                            <DockPanel>
-                                <Button DockPanel.Dock="Right" Content="PLC'de Kontrol Et" Command="{Binding ValidateCommand}" Height="46" Padding="16,0" Margin="10,0,0,0" />
-                                <Button Content="Bu reçeteyi başlat…" Command="{Binding StartCommand}" Height="46" FontSize="16"
-                                        Background="{StaticResource OkBackBrush}" BorderBrush="#1F6B3C" />
-                            </DockPanel>
-                            <TextBlock Text="{Binding Message}" Style="{StaticResource ResultText}" Margin="0,10,0,0" />
-                            <TextBlock Text="Başlat; şarj ağırlığını ve notu soran pencereyi açar." Style="{StaticResource LabelText}" Margin="0,6,0,0" />
-                        </StackPanel>
-                    </Border>
+                <!-- Hata özeti ve son işlemin sonucu -->
+                <StackPanel DockPanel.Dock="Top" Margin="0,4,0,0">
+                    <TextBlock Foreground="{StaticResource BadBrush}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
+                               Visibility="{Binding HasErrors, Converter={StaticResource BoolToVis}}">
+                        <Run Text="Reçetede" />
+                        <Run Text="{Binding ErrorSummary, Mode=OneWay}" />
+                        <Run Text="var; PLC bu reçeteyi kabul etmeyebilir." />
+                        <Run Text="{Binding GeneralError, Mode=OneWay}" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding Message}" Style="{StaticResource ResultText}" />
+                </StackPanel>
 
-                    <Border Padding="10,10,6,8" CornerRadius="6" Background="{StaticResource CardBrush}">
-                        <DockPanel>
-                            <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="4,0,8,6">
-                                <TextBlock Text="EĞRİ VE GAZLAR" Style="{StaticResource PanelTitle}" FontSize="12" />
-                                <ContentControl DockPanel.Dock="Right" ContentTemplate="{StaticResource ChartLegend}" Content="{Binding}" />
-                            </DockPanel>
-                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding ProfileNote}" Style="{StaticResource LabelText}" TextWrapping="Wrap" Margin="4,6,8,0" />
-                            <controls:GasLanes DockPanel.Dock="Bottom" Data="{Binding LaneData}" Margin="0,4,0,0" />
-                            <controls:ProfileChart Data="{Binding ChartData}" MinHeight="180" />
+                <!-- Eğri ve gaz şeritleri: geniş ve kısa -->
+                <Border DockPanel.Dock="Top" Margin="0,8,0,0" Padding="10,10,6,8" CornerRadius="6"
+                        Background="{StaticResource PageBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                    <DockPanel>
+                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="4,0,8,6">
+                            <TextBlock Text="EĞRİ VE GAZLAR" Style="{StaticResource PanelTitle}" FontSize="12" />
+                            <ContentControl DockPanel.Dock="Right" ContentTemplate="{StaticResource ChartLegend}" Content="{Binding}" />
                         </DockPanel>
-                    </Border>
-                </DockPanel>
-            </Grid>
+                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding ProfileNote}" Style="{StaticResource LabelText}" Margin="4,4,8,0" />
+                        <controls:GasLanes DockPanel.Dock="Bottom" Data="{Binding LaneData}" Margin="0,4,0,0" />
+                        <controls:ProfileChart Data="{Binding ChartData}" Height="190" />
+                    </DockPanel>
+                </Border>
+
+                <TextBlock DockPanel.Dock="Bottom" Text="Başlat; şarj ağırlığını ve notu soran pencereyi açar. Bu görünümde değerler değiştirilemez."
+                           Style="{StaticResource LabelText}" Margin="0,8,0,0" />
+
+                <!-- Adım tablosunun başlığı -->
+                <Border DockPanel.Dock="Top" Margin="0,12,0,0" Padding="5,0,0,6" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="No" Width="44" TextAlignment="Center" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="Adım" Width="92" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="Ne yapılır" Width="330" Style="{StaticResource LabelText}" />
+                        <TextBlock Text="Süre" Width="96" Style="{StaticResource ReadHead}" />
+                        <TextBlock Text="Azot" Width="112" Style="{StaticResource ReadHead}" />
+                        <TextBlock Text="Amonyak" Width="118" Style="{StaticResource ReadHead}" Visibility="{Binding IsNitriding, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="CO₂" Width="84" Style="{StaticResource ReadHead}" Visibility="{Binding IsNitriding, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="Su" Width="76" Style="{StaticResource ReadHead}" Visibility="{Binding IsOxidation, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="H₂ oto" Width="104" Style="{StaticResource ReadHead}" Visibility="{Binding IsNitriding, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="Gsoak" Width="100" Style="{StaticResource ReadHead}" />
+                        <TextBlock Text="Fan" Width="88" Style="{StaticResource ReadHead}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Adımlar: ne yapıldığı cümleyle, değerler birimleriyle hizalı sütunlarda -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding ReadLines}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource ReadRow}">
+                                    <DockPanel>
+                                        <Border DockPanel.Dock="Left" Width="5" Style="{StaticResource StepStripe}" />
+                                        <StackPanel VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding StepNo}" Width="44" TextAlignment="Center" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding KindText}" Width="92" Style="{StaticResource KindText}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding Main}" Width="330" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+
+                                                <!-- Vakum adımında sütunların yerine açıklama -->
+                                                <TextBlock Text="{Binding Note}" Foreground="{StaticResource MutedBrush}" FontSize="13" VerticalAlignment="Center" Margin="56,0,0,0"
+                                                           Visibility="{Binding IsVacuum, Converter={StaticResource BoolToVis}}" />
+
+                                                <StackPanel Orientation="Horizontal" Visibility="{Binding HasValues, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="{Binding Duration}" Width="96" Style="{StaticResource ReadValue}" />
+                                                    <TextBlock Text="{Binding N2}" Width="112" Style="{StaticResource ReadValue}" />
+                                                    <TextBlock Text="{Binding NH3}" Width="118" Style="{StaticResource ReadValue}" Visibility="{Binding ShowNitriding, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Text="{Binding CO2}" Width="84" Style="{StaticResource ReadValue}" Visibility="{Binding ShowNitriding, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Text="{Binding Water}" Width="76" Style="{StaticResource ReadValue}" Visibility="{Binding ShowWater, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Text="{Binding H2}" Width="104" Style="{StaticResource ReadValue}" Visibility="{Binding ShowNitriding, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Text="{Binding Gsoak}" Width="100" Style="{StaticResource ReadValue}" />
+                                                    <TextBlock Text="{Binding Fan}" Width="88" Style="{StaticResource ReadValue}" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource BadBrush}" FontSize="12.5" FontWeight="SemiBold" Margin="136,0,0,4"
+                                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
         </Border>
 
         <!-- DÜZENLEME: Düzenle, Yeni ya da Kopyala ile açılır -->
@@ -499,20 +513,7 @@
                     </StackPanel>
                 </DockPanel>
 
-                <!-- Eğri ve gaz şeritleri: yazdıkça güncellenir -->
-                <Border DockPanel.Dock="Bottom" Margin="0,12,0,0" Padding="10,10,6,8" CornerRadius="6" Background="{StaticResource CardBrush}">
-                    <DockPanel>
-                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="4,0,8,6">
-                            <TextBlock Text="EĞRİ VE GAZLAR" Style="{StaticResource PanelTitle}" FontSize="12" />
-                            <ContentControl DockPanel.Dock="Right" ContentTemplate="{StaticResource ChartLegend}" Content="{Binding}" />
-                        </DockPanel>
-                        <TextBlock DockPanel.Dock="Bottom" Text="{Binding ProfileNote}" Style="{StaticResource LabelText}" Margin="4,4,8,0" />
-                        <controls:GasLanes DockPanel.Dock="Bottom" Data="{Binding LaneData}" Margin="0,4,0,0" />
-                        <controls:ProfileChart Data="{Binding ChartData}" Height="170" />
-                    </DockPanel>
-                </Border>
-
-                <!-- Başlık ve adımlar -->
+                <!-- Başlık, eğri ve adımlar -->
                 <DockPanel IsEnabled="{Binding CanEdit}">
 
                     <TextBlock DockPanel.Dock="Top" Text="{Binding EditorTitle}" Style="{StaticResource PanelTitle}" Margin="0,0,0,10" />
@@ -562,6 +563,20 @@
                             </StackPanel>
                         </WrapPanel>
                     </DockPanel>
+
+                    <!-- Eğri ve gaz şeritleri: başlık alanlarının altında, tablonun üstünde; yazdıkça güncellenir -->
+                    <Border DockPanel.Dock="Top" Margin="0,0,0,12" Padding="10,10,6,8" CornerRadius="6"
+                            Background="{StaticResource PageBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="4,0,8,6">
+                                <TextBlock Text="EĞRİ VE GAZLAR" Style="{StaticResource PanelTitle}" FontSize="12" />
+                                <ContentControl DockPanel.Dock="Right" ContentTemplate="{StaticResource ChartLegend}" Content="{Binding}" />
+                            </DockPanel>
+                            <TextBlock DockPanel.Dock="Bottom" Text="{Binding ProfileNote}" Style="{StaticResource LabelText}" Margin="4,4,8,0" />
+                            <controls:GasLanes DockPanel.Dock="Bottom" Data="{Binding LaneData}" Margin="0,4,0,0" />
+                            <controls:ProfileChart Data="{Binding ChartData}" Height="150" />
+                        </DockPanel>
+                    </Border>
 
                     <!-- Sütun grupları: sıcaklık, gazlar, hidrojen kontrolü, fan -->
                     <Grid DockPanel.Dock="Top" Margin="0,2,0,0">
