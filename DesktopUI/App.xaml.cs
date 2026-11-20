@@ -96,6 +96,7 @@ namespace DesktopUI
 
             _shellViewModel = new ShellViewModel(_api, _session, _live, _settings);
             _shellViewModel.LogoutRequested += () => Logout(null);
+            _shellViewModel.ExitRequested += ExitProgram;
 
             _shellWindow = new ShellWindow(_shellViewModel);
             _shellWindow.Closed += (_, _) =>
@@ -140,8 +141,28 @@ namespace DesktopUI
             ShowLogin(message);
 
             _switchingWindow = true;
+            window.AllowClose = true;
             window.Close();
             _switchingWindow = false;
+        }
+
+        // Ayarlar sayfasından istenince ana pencereyi kapatır; pencere kapanınca program sonlanır.
+        private void ExitProgram()
+        {
+            if (_shellWindow == null)
+                return;
+
+            _shellWindow.AllowClose = true;
+            _shellWindow.Close();
+        }
+
+        // Windows oturumu kapanırken ana pencerenin kapanmasına izin verir; yoksa pencere bilgisayarın kapanmasını engeller.
+        protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+        {
+            if (_shellWindow != null)
+                _shellWindow.AllowClose = true;
+
+            base.OnSessionEnding(e);
         }
 
         // Program kapanırken canlı bağlantıyı kapatır.

@@ -1,7 +1,6 @@
 ﻿using Core.Constants;
 using DesktopUI.Services;
 using DesktopUI.ViewModels;
-using System.Windows.Data;
 
 namespace DesktopUI.Views
 {
@@ -15,6 +14,9 @@ namespace DesktopUI.Views
 
         // Ayarlar sayfası bir sonraki açılışında bu anahtarlı sekmeyle açılır; bir kez kullanılır.
         public string? PendingSettingsTab { get; set; }
+
+        // Ayarlar sayfasındaki "Programı kapat" düğmesinin çağırdığı işlem; ana pencere verir.
+        public Action? ExitAction { get; set; }
 
         // Sayfaların ihtiyaç duyduğu ortak servisleri alır.
         public PageFactory(ApiClient api, SessionService session, LiveDataService live, AppSettings settings)
@@ -88,7 +90,7 @@ namespace DesktopUI.Views
             }
         }
 
-        // Ayarlar sayfasını sekmeleriyle kurar; Bağlantı sekmesi PLC ayar yetkisine, kullanıcı ve işlem kaydı sekmeleri Admin'e gösterilir.
+        // Ayarlar sayfasını sekmeleriyle kurar; Bağlantı sekmesi PLC ayar yetkisine; kullanıcı, işlem kaydı ve program sekmeleri Admin'e gösterilir.
         private SettingsHostView CreateSettings()
         {
             var host = new SettingsHostViewModel();
@@ -102,6 +104,7 @@ namespace DesktopUI.Views
             {
                 host.AddTab("users", "Kullanıcılar", () => new UsersView(new UsersViewModel(_api, _session)));
                 host.AddTab("audit", "İşlem Kayıtları", () => new AuditLogsView(new AuditLogsViewModel(_api)));
+                host.AddTab("application", "Program", () => new ApplicationView(new ApplicationViewModel(_session, _settings, () => ExitAction?.Invoke())));
             }
 
             if (PendingSettingsTab != null)

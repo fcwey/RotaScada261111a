@@ -1,0 +1,74 @@
+﻿<UserControl x:Class="DesktopUI.Views.ApplicationView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <UserControl.Resources>
+        <Style x:Key="Panel" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="20,18" />
+        </Style>
+        <Style x:Key="PanelTitle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,0,12" />
+        </Style>
+        <Style x:Key="RowLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Margin" Value="0,5" />
+        </Style>
+        <Style x:Key="RowValue" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,5" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="760" HorizontalAlignment="Left">
+
+            <!-- Ekran programının bilgileri -->
+            <Border Style="{StaticResource Panel}">
+                <StackPanel>
+                    <TextBlock Text="EKRAN PROGRAMI" Style="{StaticResource PanelTitle}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                            <RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Fırın" Style="{StaticResource RowLabel}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding FurnaceName}" Style="{StaticResource RowValue}" />
+                        <TextBlock Grid.Row="1" Text="SCADA sunucusu" Style="{StaticResource RowLabel}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ServerUrl}" Style="{StaticResource RowValue}" />
+                        <TextBlock Grid.Row="2" Text="Kullanıcı" Style="{StaticResource RowLabel}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding UserName}" Style="{StaticResource RowValue}" />
+                        <TextBlock Grid.Row="3" Text="Sürüm" Style="{StaticResource RowLabel}" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Version}" Style="{StaticResource RowValue}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Programı kapatma: pencerede kapatma düğmesi olmadığı için tek yol burasıdır -->
+            <Border Style="{StaticResource Panel}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Text="PROGRAMI KAPAT" Style="{StaticResource PanelTitle}" />
+                    <TextBlock Foreground="{StaticResource SoftTextBrush}" TextWrapping="Wrap"
+                               Text="Ekran programı normalde sürekli açık kalır. Kapatıldığında fırın, PLC ve SCADA sunucusu çalışmaya devam eder; ancak program yeniden açılana kadar fırın bu bilgisayardan izlenemez." />
+                    <Button Content="Programı kapat" Command="{Binding ExitCommand}" HorizontalAlignment="Left" Margin="0,14,0,0"
+                            Background="{StaticResource BadBackBrush}" BorderBrush="#A8383C" Foreground="{StaticResource BadTextBrush}" />
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

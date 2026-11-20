@@ -28,6 +28,28 @@ namespace DesktopUI.ViewModels
         private bool _h2Auto;
         private double _h2SetPercent;
         private int _fanSpeed;
+        private bool _isSelected;
+        private bool _hasH2Error;
+        private string _errorText = string.Empty;
+
+        // Tabloda seçili satır; taşıma, çoğaltma ve silme düğmeleri yalnızca bu satırda görünür.
+        public bool IsSelected { get => _isSelected; set => SetProperty(ref _isSelected, value); }
+
+        // Hidrojen kuralı sağlanmıyorsa amonyak kutusu kırmızı çerçevelenir.
+        public bool HasH2Error { get => _hasH2Error; set => SetProperty(ref _hasH2Error, value); }
+
+        // Satırın altında gösterilen hata; boşsa satır hatasızdır.
+        public string ErrorText
+        {
+            get => _errorText;
+            set
+            {
+                if (SetProperty(ref _errorText, value))
+                    OnPropertyChanged(nameof(HasError));
+            }
+        }
+
+        public bool HasError => _errorText.Length > 0;
 
         public int StepNo { get => _stepNo; set => SetProperty(ref _stepNo, value); }
 
@@ -128,6 +150,12 @@ namespace DesktopUI.ViewModels
                 _h2SetPercent = step.H2_Set / 10.0,
                 _fanSpeed = step.FanSpeed
             };
+        }
+
+        // Satırın aynı değerlerle bir kopyasını üretir.
+        public RecipeStepRow Clone()
+        {
+            return FromEntity(ToEntity(), RecipeType, _changed);
         }
 
         // Satırı sunucuya gönderilecek adıma çevirir; o adımda görünmeyen alanlar 0 gider.

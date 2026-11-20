@@ -1,14 +1,14 @@
 ﻿using DesktopUI.ViewModels;
+using System.ComponentModel;
 using System.Windows;
-using System.Windows.Media;
 
 namespace DesktopUI.Views
 {
-    // Ana pencere: çerçevesizdir, üst durum şeridi başlık çubuğu görevi görür
+    // Ana pencere: başlık çubuğu ve pencere düğmeleri yoktur; hep ekranı kaplar, küçültülemez ve izin verilmeden kapatılamaz
     public partial class ShellWindow : Window
     {
-        private static readonly Geometry MaximizeGeometry = Geometry.Parse("M0,0 H10 V10 H0 Z");
-        private static readonly Geometry RestoreGeometry = Geometry.Parse("M0,2 H8 V10 H0 Z M2,2 V0 H10 V8 H8");
+        // Pencerenin kapanmasına izin verir; yalnızca oturum kapatılırken ya da Ayarlar'dan program kapatılırken açılır.
+        public bool AllowClose { get; set; }
 
         // Görünüm modelini pencereye bağlar ve pencere durumunu izlemeye başlar.
         public ShellWindow(ShellViewModel viewModel)
@@ -16,42 +16,36 @@ namespace DesktopUI.Views
             InitializeComponent();
             DataContext = viewModel;
 
-            StateChanged += (_, _) => ApplyWindowState();
-            ApplyWindowState();
+            StateChanged += (_, _) => KeepMaximized();
+            ApplyEdgeMargin();
         }
 
-        // Ekranı kaplayınca taşan kenar kadar iç boşluk verir ve büyüt simgesini duruma göre değiştirir.
-        private void ApplyWindowState()
+        // İzin verilmemişse kapanmayı engeller (Alt+F4 ve görev çubuğundan kapatma dahil).
+        protected override void OnClosing(CancelEventArgs e)
         {
-            if (WindowState == WindowState.Maximized)
+            if (!AllowClose)
+                e.Cancel = true;
+
+            base.OnClosing(e);
+        }
+
+        // Pencere küçültülür ya da eski boyutuna döndürülürse yeniden ekranı kaplar hale getirir.
+        private void KeepMaximized()
+        {
+            if (WindowState != WindowState.Maximized)
             {
-                Thickness edge = SystemParameters.WindowResizeBorderThickness;
-                RootBorder.Margin = new Thickness(edge.Left + 4, edge.Top + 4, edge.Right + 4, edge.Bottom + 4);
-                MaximizeIcon.Data = RestoreGeometry;
+                Dispatcher.BeginInvoke(() => WindowState = WindowState.Maximized);
+                return;
             }
-            else
-            {
-                RootBorder.Margin = new Thickness(0);
-                MaximizeIcon.Data = MaximizeGeometry;
-            }
+
+            ApplyEdgeMargin();
         }
 
-        // Pencereyi görev çubuğuna küçültür.
-        private void OnMinimizeClick(object sender, RoutedEventArgs e)
+        // Ekranı kaplayan pencerenin ekran dışına taşan kenarı kadar iç boşluk verir.
+        private void ApplyEdgeMargin()
         {
-            WindowState = WindowState.Minimized;
-        }
-
-        // Pencereyi ekranı kaplar hale getirir ya da eski boyutuna döndürür.
-        private void OnMaximizeClick(object sender, RoutedEventArgs e)
-        {
-            WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-        }
-
-        // Pencereyi kapatır.
-        private void OnCloseClick(object sender, RoutedEventArgs e)
-        {
-            Close();
+            Thickness edge = SystemParameters.WindowResizeBorderThickness;
+            RootBorder.Margin = new Thickness(edge.Left + 4, edge.Top + 4, edge.Right + 4, edge.Bottom + 4);
         }
     }
 }

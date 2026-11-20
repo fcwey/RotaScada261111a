@@ -10,9 +10,9 @@
         Foreground="{StaticResource TextBrush}"
         FontFamily="Segoe UI" FontSize="14">
 
-    <!-- Windows başlık çubuğu yerine üst durum şeridi kullanılır; şerit pencereyi sürükler -->
+    <!-- Başlık çubuğu ve pencere düğmeleri yoktur: pencere sürüklenemez, boyutlanamaz, hep ekranı kaplar -->
     <WindowChrome.WindowChrome>
-        <WindowChrome CaptionHeight="64" GlassFrameThickness="0" ResizeBorderThickness="6"
+        <WindowChrome CaptionHeight="0" GlassFrameThickness="0" ResizeBorderThickness="0"
                       UseAeroCaptionButtons="False" CornerRadius="0" />
     </WindowChrome.WindowChrome>
 
@@ -57,47 +57,6 @@
                                 <Setter TargetName="Icon" Property="Stroke" Value="#6FB6FF" />
                                 <Setter Property="Foreground" Value="White" />
                                 <Setter Property="FontWeight" Value="SemiBold" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Pencere düğmeleri: küçült, büyüt -->
-        <Style x:Key="WindowButton" TargetType="Button">
-            <Setter Property="Width" Value="46" />
-            <Setter Property="Height" Value="64" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Focusable" Value="False" />
-            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Back" Background="{TemplateBinding Background}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Back" Property="Background" Value="#33FFFFFF" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Kapat düğmesi: üzerine gelince kırmızı olur -->
-        <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource WindowButton}">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Back" Background="{TemplateBinding Background}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Back" Property="Background" Value="#E81123" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -158,7 +117,6 @@
             <Setter Property="Foreground" Value="{StaticResource BadTextBrush}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Focusable" Value="False" />
-            <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
@@ -261,8 +219,8 @@
 
                 <DockPanel>
 
-                    <!-- Sağ uç: kule, mod, bağlantı düğmesi ve pencere düğmeleri -->
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Sağ uç: kule, mod ve bağlantı düğmesi -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
 
                         <!-- Işık kulesi (yatay): kırmızı, yeşil, sarı -->
                         <Border Height="34" CornerRadius="17" Padding="10,0" Margin="0,0,10,0"
@@ -282,7 +240,7 @@
                             <TextBlock Text="{Binding ModeText}" FontWeight="SemiBold" VerticalAlignment="Center" />
                         </Border>
 
-                        <ToggleButton x:Name="LinkButton" Style="{StaticResource LinkButtonStyle}" Margin="0,0,8,0"
+                        <ToggleButton x:Name="LinkButton" Style="{StaticResource LinkButtonStyle}"
                                       IsChecked="{Binding IsConnectionOpen, Mode=TwoWay}" ToolTip="{Binding LinkDetail}" />
 
                         <!-- Bağlantı paneli: yalnızca bilgi gösterir -->
@@ -321,16 +279,6 @@
                                 </StackPanel>
                             </Border>
                         </Popup>
-
-                        <Button Style="{StaticResource WindowButton}" Click="OnMinimizeClick" ToolTip="Küçült">
-                            <Path Data="M0,0 H11" Stroke="White" StrokeThickness="1.2" />
-                        </Button>
-                        <Button Style="{StaticResource WindowButton}" Click="OnMaximizeClick" ToolTip="Büyüt / Geri al">
-                            <Path x:Name="MaximizeIcon" Data="M0,0 H10 V10 H0 Z" Stroke="White" StrokeThickness="1.2" />
-                        </Button>
-                        <Button Style="{StaticResource CloseButton}" Click="OnCloseClick" ToolTip="Kapat">
-                            <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="White" StrokeThickness="1.2" />
-                        </Button>
                     </StackPanel>
 
                     <!-- Sol: durum simgesi ve adı, bilgi hücreleri, yapılacak iş -->

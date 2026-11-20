@@ -119,6 +119,9 @@ namespace DesktopUI.ViewModels
         // Kullanıcı çıkış istediğinde tetiklenir.
         public event Action? LogoutRequested;
 
+        // Yetkili kullanıcı Ayarlar sayfasından programı kapatmak istediğinde tetiklenir.
+        public event Action? ExitRequested;
+
         public string FurnaceName { get; }
         public string UserName { get; }
         public List<MenuEntry> MenuItems { get; }
@@ -184,6 +187,7 @@ namespace DesktopUI.ViewModels
             _live = live;
             _settings = settings;
             _pages = new PageFactory(api, session, live, settings);
+            _pages.ExitAction = () => ExitRequested?.Invoke();
 
             FurnaceName = settings.FurnaceName;
             UserName = !string.IsNullOrWhiteSpace(session.User?.Name) ? session.User!.Name : session.User?.Email ?? string.Empty;
